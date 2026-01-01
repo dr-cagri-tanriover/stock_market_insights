@@ -320,15 +320,99 @@ When you call the *false_positive_rate()* function with the default arguments, y
 
 To sum up, 30-day frames where we observe sign changes of 13 or more will be categorized as oscillatory. In other words, if **ZCR >= 13/28 (~0.46), a 30-day frame will be indicated to have strong oscillation.**
 
-***BONUS STATISTICS FOR THE CURIOUS MINDS***: Though we have calculated our zero crossing threshold, I would like to share an alternative calculation method using the relationship between binomial distribution and normal distribution, which will simplify our calculations with a few approximations.
+***OPTIONAL STATISTICS FOR THE CURIOUS MINDS***: Though we have calculated our zero crossing threshold, I would like to share an alternative calculation method using the relationship between binomial distribution and normal distribution, which will simplify our calculations with a few approximations.
 
+A Bernoulli random variable represents a single trial with exactly two outcomes: success (often coded as 1) and failure (often coded as 0). A binomial variable is the sum of n independent Bernoulli variables. The central limit theorem tells us the sum of many independent, and identically distributed variables tends toward a normal distribution, **regardless of the original variable's distribution**.
 
+Therefore, a binomial distribution can be approximated to a normal distribution under certain conditions, i.e., when the binomial distribution is now too skewed!
 
+A practical rule when a binomial distribution can be approximated to a normal distribution is:
 
+np >= 5 AND n(1-p) >= 5
 
+Some textbooks define a tighter condition for stricter accuracy as:
 
+np >= 10 AND n(1-p) >= 10
 
+The interpretation of the above rule is as follows:
+- We need enough expected success (i.e., np) and enough expected failures (i.e., n(1-p))
+- If p is very small or very large, the binomial distribution is highly skewed and the approximation becomes poor.
 
+For our particular case where n=28 and p=0.3,
+
+np = 8.4 and n(1-p)=19.6, which satisfy the looser criterion. So looking at the normal distribution approximation will make sense.
+
+We first need to calculate the mean and the variance for our approximated normal distribution. Let's first calculate the mean and variance for a single Bernoulli random variable and then generalize it to the binomial distribution, which is really easy.
+
+Following are the general definitions of mean and variance calculation for discrete events.
+
+<div align="center">
+  <img src="readme_images/mean_variance.png" alt="mean and variance" height="100px">
+</div>
+
+For a Bernoulli variable, 0 and 1 are the only two values. Therefore, when we compute the above equation for 0 and 1, we obtain the mean and variance expressions as a function of the success probability as follows.
+
+<div align="center">
+  <img src="readme_images/mean_variance_2.png" alt="mean and variance 2" height="150px">
+</div>
+
+Since binomial distribution is simply the sum of **independent** Bernoulli variables, we can convert the mean and variance of a single Bernoulli variable into a binomial equivalent with n trials by adding 'n' Bernoulli mean and variance values as follows:
+
+<div align="center">
+  <img src="readme_images/mean_variance_3.png" alt="mean and variance 3" height="50px">
+</div>
+
+If you are wondering about the error bound for approximating a binomial distribution to a normal distribution, the Berry-Esseen theorem shows the larger the np(1-p) factor is, the better the approximation, as follows:
+
+<div align="center">
+  <img src="readme_images/mean_variance_4.png" alt="mean and variance 4" height="100px">
+</div>
+
+Now that we have calculated the mean and the variance for the equivalent normal distribution, we can calculate (or look up) probabilities for normalized random variables as follows:
+
+<div align="center">
+  <img src="readme_images/mean_variance_5.png" alt="mean and variance 5" height="80px">
+</div>
+
+As you will recall, we are trying to find the number of sign changes (k) that will warrant a maximum false positive rate (i.e., 5% as we saw before) However, in order to calculate k, we will first need to find the z score using the normal distribution. This problem can be stated as "what is the value t I can assign to z above which only 5% of the distribution will be present?" This statement can be summarized as follows:
+
+<div align="center">
+  <img src="readme_images/mean_variance_6.png" alt="mean and variance 6" height="80px">
+</div>
+
+We can either use look up tables to find t in the top 5% tail of the normal distribution. This is equivalent to finding t in the bottom 95% tail of the same distribution. An alternative way is to use the following Python script that gives the t value below which a given percentile of the distribution exists.
+
+```python
+    from scipy.stats import norm
+
+    p = 0.95  # this is the (1 - 5%) probability
+    t = norm.ppf(p)
+    print(t) 
+```
+
+The above calculation will yield t=1.645, which will be used to calculate k.
+
+Before calculating k, we need to talk about what is called the *"continuity correction"* since binomial distribution deals with discrete variables while the normal distribution approximation is continuous. Therefore, we redefine the inequality for the discrete variable X in terms of the continuous version Y as follows.
+
+<div align="center">
+  <img src="readme_images/mean_variance_7.png" alt="mean and variance 7" height="50px">
+</div>
+
+The best way to interpret the above is to think about the discrete value k as a point in the middle of a bar on a chart extending from k-0.5 to k+0.5. Therefore, for a discrete variable to be greater than or equal to k simply means its continuous version needs to be greater than or equal to k-0.5 to improve accuracy.
+
+So we replace the k term in the previous normalization expression to (k-0.5) as follows.
+
+<div align="center">
+  <img src="readme_images/mean_variance_8.png" alt="mean and variance 8" height="80px">
+</div>
+
+The final step now is to recall n=28 and p=0.3 for calculating the sign change threshold k, and to also use t=1.645 we calculated above. Following is how we plug the numbers to obtain k, which needs to be an integer as it belongs to a discrete distribution.
+
+<div align="center">
+  <img src="readme_images/mean_variance_9.png" alt="mean and variance 9" height="250px">
+</div>
+
+As you can see k=13 we found using the normal distribution approximation is in agreement with our manual calculation result presented in the previous section!
 
 ***5. Volatility threshold:*** Assuming we have calculated all volatility metrics for all 30-day frames in our dataset, we can define the two thresholds:
 
