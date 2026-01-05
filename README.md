@@ -82,7 +82,7 @@ We then calculate the mean return value and calculate the volatility (v), which 
   <img src="readme_images/volatility.png" alt="volatility" height="50px">
 </div>
 
-***Note:*** *Using log returns instead of simple returns as described above may work better statistically. Following is how you calculate a log return:*
+***Note:*** *Using log returns instead of simple returns as described above may work better statistically. Following is how you calculate a daily log return:*
 
 <div align="center">
   <img src="readme_images/log_return.png" alt="log return" height="55px">
@@ -224,8 +224,8 @@ Following is how we calculate the near-zero slope threshold, which indicatees fl
 
 To sum up,
 
-|b| < 0.001 *indicates a near-zero slope, i.e. a flat window*  
-|b| >= 0.001 *indicates a non-flat window*
+|b| <= 0.001 *indicates a near-zero slope, i.e. a flat window*  
+|b| > 0.001 *indicates a non-flat window*
 
 For clarification, any |b| that falls between 0.001 and 0.003 indicates a movement in the drift region as I described in an earlier plot. 30-day frames that fall into this drift region will be classified as OTHER as we will see later in the label mapping section.
 
@@ -414,11 +414,42 @@ The final step now is to recall n=28 and p=0.3 for calculating the sign change t
 
 As you can see k=13 we found using the normal distribution approximation is in agreement with our manual calculation result presented in the previous section!
 
-***5. Volatility threshold:*** Assuming we have calculated all volatility metrics for all 30-day frames in our dataset, we can define the two thresholds:
+***5. Volatility threshold:*** This threshold will be defined for qualitatively different two regimes:
+- **Low:** This is the upper limit of the quiet region where noise is small and "stationary" is meaningful.
+- **High:** This is the lower limit of the high-noise region where gain fluctuations are so large that slope-based trend labels become unreliable.  
 
-v(low) = 25th percentile of volatility metrics in the dataset. *(to confirm volatility is low)*
+We start by defining two ranges for the low and high volatility described above for the price gains in each 30-day window. Based on empirical human visual perception, a low volatility over 30-days is chosen to be levels that fall below the 4%-5% range. Similarly, a high volatility is expected to fall above the 10% to 12% range.
 
-v(high) = 75th percentile of volatility metrics in the dataset. *(to confirm volatility is high - useful to ignore seemingly strong trends in the frame!)*
+The standard deviation of log of gains over each 30-day window gives the daily volatility as follows:
+
+<div align="center">
+  <img src="readme_images/volatility_th.png" alt="volatility threshold" height="80px">
+</div>
+
+Since we are working with N=30 prices per month, we can define M=N-1 daily gain terms (as each gain is a comparison of two successive days). Therefore, the expected window-scale fluctuation over 30 days is calculaterd as follows:
+
+<div align="center">
+  <img src="readme_images/volatility_th_2.png" alt="volatility threshold 2" height="170px">
+</div>
+
+For the quiet region where the volatility is low, we need to select the low threshold according to the following inequality:
+
+<div align="center">
+  <img src="readme_images/volatility_th_3.png" alt="volatility threshold 3" height="170px">
+</div>
+
+Similarly, for the noisy region where the volatility is high, we need to select the high threshold as follows:
+
+<div align="center">
+  <img src="readme_images/volatility_th_4.png" alt="volatility threshold 4" height="170px">
+</div>
+
+Therefore, the two sigma thresholds we will use are:  
+v(low) <= 0.008 *low volatility, stationary window*  
+v(high) >= 0.02 *high volatility, no trend window*
+
+It follows that any sigma that falls between the above two thresholds is considered to be the typical regime (i.e., the medium volatility band)
+
 
 ### Labeling rules:
 We now have all of our definitions and criteria to create our labeling rules for generating ground truth data for all of our dataset.
@@ -428,31 +459,32 @@ We need to apply the following 5 rules in the listed order to successfully creat
 > ***Rule 1*** - STATIONARY  class
 > A frame is classified as STATIONARY if it is both flat and quiet.  
 > *Criteria:*  
-> - |b| <= b(0)  i.e., flat/near flat characteristic  
-> - AND v <= v(low)  i.e., low volatility  
-> - AND z < z(osc)  i.e., weak/no oscillations  
+> - |b| < 0.001  i.e., flat/near flat characteristic  
+> - AND v <= 0.008  i.e., low volatility, v(low)  
+> - AND z < 0.46  i.e., weak/no oscillations  
 
 > ***Rule 2*** - OSCILLATING class
 > A frame is classified as OSCILLATING if it flips direction frequently and does not have a strong trend.  
 > *Criteria:*    
-> - z >= z(osc)  i.e., strong oscillations  
-> - AND ts < ts(min) i.e., no strong trend  
+> - z >= 0.46  i.e., strong oscillations  
+> - AND ts < 0.36 i.e., no strong trend
+> - AND v > 0.008 i.e., above the low volatility threshold to ignore tiny jitters as oscillations.
 
 > ***Rule 3*** - TREND_UP class
 > A frame is classified as TREND_UP if it has a positive slope and trend dominates noise.  
 > *Criteria:*    
-> - b >= b(up)  i.e., strong positive slope  
-> - AND ts > ts(min) i.e., strong trend
-> - AND z <= z(osc) i.e., guard against oscillatory frames  
-> - AND v <= v(high)  i.e., guard against very noisy "trends"   
+> - b >= 0.003  i.e., strong positive slope  
+> - AND ts >= 0.36 i.e., strong trend
+> - AND z < 0.46 i.e., guard against oscillatory frames  
+> - AND v < 0.02  i.e., guard against very noisy "trends"   
 
 > ***Rule 4*** - TREND_DOWN class
 > A frame is classified as TREND_DOWN if it has a negative slope and trend dominates noise.  
 > *Criteria:*    
-> - b <= b(down)  i.e., strong negative slope  
-> - AND ts > ts(min) i.e., strong trend
-> - AND z <= z(osc) i.e., guard against oscillatory frames  
-> - AND v <= v(high)  i.e., guard against very noisy "trends"   
+> - b <= -0.003  i.e., strong negative slope  
+> - AND ts > 0.36 i.e., strong trend
+> - AND z < 0.46 i.e., guard against oscillatory frames  
+> - AND v <0.02  i.e., guard against very noisy "trends"   
 
 > ***Rule 5*** - OTHER class
 > If a frame does not satisfy any of the above 4 rules, it is classified as OTHER. This class should collect the following cases:  
