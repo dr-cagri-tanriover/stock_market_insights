@@ -1,6 +1,6 @@
 # Generating Stock Market Insights
 
-This is my ML project where I explore various trends of the stock market. I decided to undertake this project to explore real stock market data in the US, and to generate meaningful insights that would help me understand a bit more about stock price movements and trends by using my existing ML knowledge and skills. I also aim to expand my ML skills while working on this real world project using real world data, which is my key motivation.
+This is my ML project where I explore various trends of the stock market. I decided to undertake this project to explore real stock market data in the US, and to generate meaningful insights that would help me understand a bit more about stock price movements and trends by using my existing ML knowledge and skills. I also aim to expand my ML skills by solving real world problems using real world data, which is my key motivation.
 
 I plan to explore different problems in this repository, and I will cover each problem as part of this document to provide the necessary details for each.
 
@@ -13,9 +13,9 @@ My challenge is to find out whether the OHLCV data on different stocks will allo
 
 **1. Trending up *(class name: TREND_UP)*:** This indicates a strong upward slope over the 30-day period without extreme volatility.
 
-**2. Trending up *(class name: TREND_DOWN)*:** This indicates a strong downward slope over the 30-day period without extreme volatility.
+**2. Trending down *(class name: TREND_DOWN)*:** This indicates a strong downward slope over the 30-day period without extreme volatility.
 
-**3. Stationary *(class name: STATIONARY)*:** This indicates there is neither a strong upward or downward slope over the 30-day period, and no volatility exists in that same time period.
+**3. Stationary *(class name: STATIONARY)*:** This indicates there is neither a strong upward or downward slope over the 30-day period, and no volatility in that same time period.
 
 **4. Oscillating *(class name: OSCILLATING)*:** This indicates there is too much upward and downward variation within the 30-day period. In other words, the stock price flips direction too frequently.
 
@@ -36,13 +36,13 @@ The 5 classes we defined are based on the "shape" of the 30-day price change. Th
 
 Following are the 4 shape-defined core features I will be using. These are the minimum set of features that will help me create a credible classifier.
 
-***1. Slope of linear fit:*** We simply fit a straight line on the prices inside the 30-day frame for a given stock, and calculate the slope (b) of that line. We also need to calculate the magnitude of the slope |b|, and repeat this calculation for all 30-day frames in our dataset. *(the reason for this will become clearer while describing the thresholds in a later  section)*
+***1. Slope of linear fit:*** We simply fit a straight line on the prices inside the 30-day frame for a given stock, and calculate the slope (b) of that line.
 
-***Note:*** *You may want to use log of prices rather than the raw stock prices while fitting a line for the following reasons:*
+***Note:*** *Using log of prices rather than the raw stock prices while fitting a line is a good approach for the following reasons:*
 - Log prices make trend and volatility measures scale-invariant across different stocks.
 - Log prices also allow comparison between different timelines (where absolute price difference in the same stock may be vastly different-e.g., price in 2005 vs. 2025)
 - Log prices align naturally with log returns as well (as will be discussed shortly).
-- Using logs give more stable statistical behavior for window-based classification.
+- Using logs gives more stable statistical behavior for window-based classification.
 
 ***CAUTION 1:*** *When using log of prices, keep in mind ln(0) is undefined. Therefore, you need to pre-filter zero dollar prices prior to applying log to them !!*
 
@@ -66,7 +66,7 @@ Following are the 4 shape-defined core features I will be using. These are the m
 ***Important:*** *If you calculate the |b| based on the log of prices in the 30-day frame rather than the raw prices, the standard deviation also has to be calculated using the log of prices in that same 30-day frame for consistency!*
 
 
-***3. Volatility from returns:*** Volatility is defined as the standard deviation of returns, and it measures how much the signal fluctuates relative to its average behavior. We first convert raw prices to "returns". Working with returns has the following advantages:  
+***3. Volatility from returns:*** Volatility is defined as the standard deviation of returns, and it measures how much the signal fluctuates relative to its average behavior. We first convert raw prices to "returns" as working with returns has the following advantages:  
 - It removes scale (e.g., a $10 stock can be compared to a $500 one)
 - It stabilizes variance
 - It captures relative movement instead of absolute price level
@@ -154,12 +154,13 @@ Then we calculate the rate (i.e., ZCR) as follows:
 
 z=0 means the price trend never changes direction while z=1 means the price trend direction changes each day (highly oscillatory)
 
-***Note:*** *If price does not change from one day to the next, the sign() will indicate 0. As a result, calculating a sign difference will not be possible. For such cases, ignoring the transitions involving 0 will make sense. This will be equivalent to dropping day transitions where proce difference is zero.*
+***Note:*** *If price does not change from one day to the next, the sign() will indicate 0. As a result, calculating a sign difference will not be possible. For such cases, ignoring the transitions involving 0 will make sense. This will be equivalent to dropping day transitions where price difference is zero.*  
+*An alternative (and a better) method is to replace the "no sign change" element to the sign of the previous comparison. That way no elements will be dropped and therefore the zero crossing ratio will always be calculated the same denominator (i.e., N-2)*
 
 ### Calculation of thresholds:
 Now that we covered the metrics that will be used in defining our ground truth for the classification task, next we need to define (or compute) a few thresholds for those metrics to decide on how to classify each 30-day frame in our dataset.
 
-While defining these thresholds one thing we need to watch out for is ***not to make them dependent on the dataset*** by for example, defining percentiles computed using the entire dataset! This approach would jeopardize the generalizability of our models as the percentile based thresholds are unlikely to be valid for future unseen data. Therefore, our threshold definitions will be based on daily price changes and/or each 30-day frame. We will also use empirical approaches based on human visual perception while defining these thresholds.
+While defining these thresholds one thing we need to watch out for is ***not to make them dependent on the dataset*** by, for example, defining percentiles computed using the entire dataset! This approach would jeopardize the generalizability of our models as the percentile based thresholds are unlikely to be valid for future unseen data. Therefore, our threshold definitions will be based on daily price changes and/or each 30-day frame. We will also use empirical approaches based on human visual perception while defining these thresholds. Obviously, the intuitive thresholds chosen can always be changed later, if needed, to improve performance.
 
 Before describing the thresholds, let's talk about the slope magnitude |b| and the regions where that value might fall in our dataset. There are three regions we need to keep in mind when working with |b| as shown below defined by two thresholds y1 and y2.
 
@@ -214,9 +215,9 @@ Note we are able to define the threshold symmetrically because log-price slopes 
 
 ***2. Near-zero slope threshold:*** This threshold is the level below which a daily drift direction becomes visually and statistically indistinguishable from noise over a 30-day window.
 
-Over a 30-day window, a 3% move upwards or downwards is subtle, and is within what random fluctuations can produce. Human perception cannot recognize such low level of movement as trend over a 30-day period. Therefore, a maximum of 3% cumulative movement can be used as threshold that separates the visually and statistically distinguishable directional changes from stationary ones.
+Over a 30-day window, a 3% move upwards or downwards is subtle, and is within what random fluctuations can produce. Human perception cannot recognize such low level of movement as trend over a 30-day period. Therefore, a maximum of 3% cumulative movement can be used as the threshold that separates the visually and statistically distinguishable directional changes from stationary ones.
 
-Following is how we calculate the near-zero slope threshold, which indicatees flatness using the 30-day cumulative movement limit of 3%. 
+Following is how we calculate the near-zero slope threshold, which indicates flatness using the 30-day cumulative movement limit of 3%. 
 
 <div align="center">
   <img src="readme_images/flatness_threshold_eq.png" alt="flatness threshold" height="250px">
@@ -253,7 +254,7 @@ We can now finalize our threshold for trend strength as:
 TS >= 0.36 *indicates a strong upward or downward trend*  
 TS < 0.36 *indicates a weak/no trend*
 
-***4. Oscillation threshold:*** In order to calculate this threshold, we need to use binomial tail probability.
+***4. Oscillation threshold:*** In order to calculate this threshold, we need to use the binomial tail probability.
 
 In a binomial probability calculation, we need to define "number of trials" and "probability of success" to start with. For our oscillation calculation, we use the number of zero crossings (i.e., ZCR) we computed earlier. So a "trial" can be defined as the number of sign change comparisons we can have in a 30-day frame.
 
@@ -273,7 +274,7 @@ Note the above equation calculates the probability for a 'k' value we fix as the
 
 In the updated version, we are now considering a minimum value 'k' as well as higher number of sign changes up to a maximum of "n". As a result, our probability calculation becomes a *sum of independent probabilities*.
 
-The last probability calculation is the *false positive rate* of ccidentally categorizing a trend window as oscillatory, which is something we want to minimize, obviously. Therefore, we use the following inequality where a false positive probability (p(fp)) is also included.
+The last probability calculation is the *false positive rate* of accidentally categorizing a trend window as oscillatory, which is something we want to minimize, obviously. Therefore, we use the following inequality where a false positive probability (p(fp)) is also included.
 
 <div align="center">
   <img src="readme_images/binomial_probability_3.png" alt="binomial probability 3" height="50px">
@@ -320,11 +321,11 @@ When you call the *false_positive_rate()* function with the default arguments, y
 
 To sum up, 30-day frames where we observe sign changes of 13 or more will be categorized as oscillatory. In other words, if **ZCR >= 13/28 (~0.46), a 30-day frame will be indicated to have strong oscillation.**
 
-***OPTIONAL STATISTICS FOR THE CURIOUS MINDS***: Though we have calculated our zero crossing threshold, I would like to share an alternative calculation method using the relationship between binomial distribution and normal distribution, which will simplify our calculations with a few approximations.
+***OPTIONAL STATISTICS FOR THE CURIOUS MINDS***: Though we have calculated our zero crossing threshold already, I would like to share an alternative calculation method using the relationship between binomial distribution and normal distribution, which will simplify our calculations with a few approximations. You will see this alternative method will also provide the same k value.
 
 A Bernoulli random variable represents a single trial with exactly two outcomes: success (often coded as 1) and failure (often coded as 0). A binomial variable is the sum of n independent Bernoulli variables. The central limit theorem tells us the sum of many independent, and identically distributed variables tends toward a normal distribution, **regardless of the original variable's distribution**.
 
-Therefore, a binomial distribution can be approximated to a normal distribution under certain conditions, i.e., when the binomial distribution is now too skewed!
+Therefore, a binomial distribution can be approximated to a normal distribution under certain conditions, i.e., when the binomial distribution is not too skewed!
 
 A practical rule when a binomial distribution can be approximated to a normal distribution is:
 
@@ -340,9 +341,9 @@ The interpretation of the above rule is as follows:
 
 For our particular case where n=28 and p=0.3,
 
-np = 8.4 and n(1-p)=19.6, which satisfy the looser criterion. So looking at the normal distribution approximation will make sense.
+np = 8.4 and n(1-p)=19.6, which satisfy the looser criterion. So considering the normal distribution approximation as alternative makes sense.
 
-We first need to calculate the mean and the variance for our approximated normal distribution. Let's first calculate the mean and variance for a single Bernoulli random variable and then generalize it to the binomial distribution, which is really easy.
+We first need to calculate the mean and the variance to characterize our approximated normal distribution. Let's first calculate the mean and variance for a single Bernoulli random variable and then generalize it to the binomial distribution, which is really easy.
 
 Following are the general definitions of mean and variance calculation for discrete events.
 
@@ -374,7 +375,7 @@ Now that we have calculated the mean and the variance for the equivalent normal 
   <img src="readme_images/mean_variance_5.png" alt="mean and variance 5" height="80px">
 </div>
 
-As you will recall, we are trying to find the number of sign changes (k) that will warrant a maximum false positive rate (i.e., 5% as we saw before) However, in order to calculate k, we will first need to find the z score using the normal distribution. This problem can be stated as "what is the value t I can assign to z above which only 5% of the distribution will be present?" This statement can be summarized as follows:
+As you will recall, we are trying to find the number of sign changes (k) that will warrant a false positive rate below an upper bound (i.e., 5% as we saw before) However, in order to calculate k, we will first need to find the z score using the normal distribution. This problem can be stated as "what is the value 't' I can assign to z, above which only 5% of the distribution will be present?" This statement can be summarized as follows:
 
 <div align="center">
   <img src="readme_images/mean_variance_6.png" alt="mean and variance 6" height="80px">
@@ -392,7 +393,7 @@ We can either use look up tables to find t in the top 5% tail of the normal dist
 
 The above calculation will yield t=1.645, which will be used to calculate k.
 
-Before calculating k, we need to talk about what is called the *"continuity correction"* since binomial distribution deals with discrete variables while the normal distribution approximation is continuous. Therefore, we redefine the inequality for the discrete variable X in terms of the continuous version Y as follows.
+Before calculating k, we need to talk about the *"continuity correction"* since binomial distribution deals with discrete variables while the normal distribution approximation is continuous. Therefore, we redefine the inequality for the discrete variable X in terms of the continuous version Y as follows.
 
 <div align="center">
   <img src="readme_images/mean_variance_7.png" alt="mean and variance 7" height="50px">
