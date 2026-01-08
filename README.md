@@ -21,6 +21,9 @@ My challenge is to find out whether the OHLCV data on different stocks will allo
 
 **5. No distinct trend *(class name: OTHER)*:** Any trend that cannot be classified as one of the above 4 will be categorized as OTHER.
 
+In other words, I am trying to model the following in this challenge:  
+***"Given a 30-day price profile, can I determine which of the above 5 regimes does that profile belong to?"***
+
 ### First things first - What is meant by "price"?
 While talking about my technical approach in the rest of this section, you will come across the word "price" often. I already mentioned the OHLCV data we will use has 4 different prices: Opening, Closing, (Daily) High and (Daily) Low. However, I did not mention which one of those 4 different prices I will be using while creating a solution to Problem 1, which I will try to clarify here.
 
@@ -57,7 +60,7 @@ Following are the 4 shape-defined core features I will be using. These are the m
 - You want shapes defined by dollar movement, not relative movement
 
 
-***2. Trend strength ratio:*** Trend strength ratio indicates whether the upward or the downward trend of the 30-day frame is a strong or a weak one. This metric is calculated as shown below where the numerator is the slope magnitude of the line of best fit and the denominator is the standard deviation of all the samples in the 30-day frame. 
+***2. Trend strength (ratio):*** Trend strength (ratio) indicates whether the upward or the downward trend of the 30-day frame is a strong or a weak one. This metric is calculated as shown below where the numerator is the slope magnitude of the line of best fit and the denominator is the standard deviation of all the samples in the 30-day frame. 
 
 <div align="center">
   <img src="readme_images/trend_strength.png" alt="trend strength" height="50px">
@@ -496,22 +499,55 @@ We need to apply the following 5 rules in the listed order to successfully creat
 
 ### Dataset Organization: ###
 
-Entire dataset is kept in one folder called ***stock_datalake***. This folder will contain multiple csv files spanning the same time period for multiple stock tickers. The data lake will include the complete OHLCV data for the selected stocks and will be (typically) constructed once in order to avoid repetitive web calls to capture the complete data required for an analysis.
+#### The Raw Data: ####
+Entire dataset is kept in one folder called ***stock_datalake***. This folder will contain raw data in multiple csv files spanning the same time period for multiple stock tickers. The data lake will include the complete OHLCV data for the selected stocks and will be (typically) constructed once in order to avoid repetitive web calls to capture the complete data required for an analysis.
 
-Each csv file will include 30-day OHLCV data and its name will be as follows:  
-**`<ticker name>_<month index>.csv`**
+Any feature engineering and train/validation/test splits will be generated using this raw data.
 
-***month_index*** is an integer that corresponds to the month number. For example, in a dataset that spans 3 years of 30-day OHLCV data, the ***month_index*** will start from 1 and go up to (and including) 36. 
+Each csv file (for a stock ticker) will include all of the days within a "start date" and an "end data". Each row will correspond to a day's OHLCV data. Each csv file name will be of the following format and will include a descriptive header row:
 
-The ***stock_datalake*** will also include a json file (called ***metadata.json***) that provides metadata on the dataset as follows:
+**`<ticker name>_<start date yyyymmdd>_<end date yyyymmdd>.csv`**
 
-```
+The ***stock_datalake*** will also include a json file (called ***metadata.json***) that provides metadata on the raw data as follows:
+
+```python
 {
     'start_date': '<YYYY-MM-DD>',
     'end_date': '<YYYY-MM-DD>',
-    'days_per_file': <days per frame/file>,
-    'months': , <total number of months per ticker>,
     'adjusted_prices': '<yes or no>',
-    'tickers': [<all stock ticker strings in dataset>]
+    'file_info': 
+                {<csv filename>: <number of rows, i.e., days>,
+                ...
+                }
 }
 ```
+
+#### The Feature Dataset: ####
+
+We will have one csv file that will include all the stock tickers in the raw data and the features generated from the OHLCV data (as described earlier).
+
+This csv file will be called **feature_dataset.csv** and will include the following column names:
+
+**'ticker':** Name of the stock ticker  
+**'end_date':** Last date of the 30-day profile used for calculating the features in YYYMMDD format
+**'b':** Slope of the log prices  
+**'zcr':** Zero crossing rate (log-return based sign changes)  
+**'v':** Daily volatility  
+**'ts':** Trend strength  
+**'gt':** Ground truth label  
+
+The tickers in the feature_dataset.csv are organized in ascending order of end_dates to simplify training/validation/test splitting without causing future leakage.
+
+In order to avoid future leakage, use the following suggestion **for each ticker**:
+
+***train split:*** 70% of the oldest part of the features (as per end_date)  
+***validation split:*** 15% of the data newer than the train split  
+***test split:*** the remaining 15% of the data that is the newest  
+
+Once we have the above split that adheres the described temporality for each stock ticker, data in each split can be mixed as far as different tickers are concerned as this is not going to cause a future leakage.  
+
+You may be wondering in the real-world, stock movements may be correlated and mixing them within the same split may cause future leakage. However, we must remember that "correlation is not leakage". A training sample leaks ***if it uses information that would not be available when making the prediction*** for a test sample. Since in our split approach we clearly isolated the future data from the past data, we are avoiding any leakage.
+
+Note the split recommendation also avoids using validation data that is newer than the test data. If this was not the case, this would not be a leakage and would not invalidate our approach here. However, following the temporality convention for the validation and test splits aligns with how the model will be used (as validation is often used as a proxy for test/future performance). Therefore, for clarity and realism, I enforce train-validation-test temporal ordering in my solution.
+
+***IN SUMMARY:*** Although shuffling the tickers within each split does not matter for the ML model for training, validation and testing, making sure, *for a given ticker*, no part of data used in training is newer than any part of data used for validation or testing is critically important. Similarly, the validation data must also be older than the test data. This is because there is a temporal relationship between the features generated for each stock ticker, which must be respected at all times.
