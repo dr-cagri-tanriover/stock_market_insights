@@ -3,11 +3,9 @@ from dataset_builder import DatalakeBuilder
 
 def run_datalake_builder():
 
-    stock_tickers=['AAPL', 'MSFT', 'GOOG', 'AMZN', 'TSLA']
-    start_date='2021-01-01'
-    end_date='2024-12-31'
+    stock_tickers=['META', 'AAPL', 'AMZN', 'NFLX', 'GOOG']  # FAANG stocks. There is built-in protection for duplicates in this list!
+    start_date, end_date = '2014-01-01', '2024-12-31'   # 10 years of data per ticker will be collected.
     output_folder='stock_datalake'
-    days_per_frame=20 # Number of days to include in each frame.
     get_adjusted_prices=True  # Gets the adjusted prices as part of OHLCV information.
     remove_existing_datalake=True  # Deletes the  existing data lake if it exists.
 
@@ -15,7 +13,6 @@ def run_datalake_builder():
         tickers=stock_tickers,
         start_date=start_date,
         end_date=end_date,
-        days_per_file=days_per_frame,
         output_folder=output_folder,
         use_adjusted=get_adjusted_prices,
         delete_existing_data=remove_existing_datalake

@@ -30,8 +30,7 @@ class DatalakeBuilder:
         tickers: List[str],
         start_date: Union[str, datetime],
         end_date: Union[str, datetime],
-        days_per_file: int = 30,
-        output_folder: str = "stock_dataset",
+        output_folder: str = "stock_datalake",
         use_adjusted: bool = True,
         delete_existing_data: bool = False
     ):
@@ -42,15 +41,14 @@ class DatalakeBuilder:
             tickers: List of stock ticker symbols (e.g., ['AAPL', 'MSFT'])
             start_date: Start date for data collection (str 'YYYY-MM-DD' or datetime)
             end_date: End date for data collection (str 'YYYY-MM-DD' or datetime)
-            output_folder: Name of the folder to save dataset files (default: 'stock_dataset')
+            output_folder: Name of the folder to save dataset files (default: 'stock_datalake')
             use_adjusted: If True, use adjusted prices (default: True)
         """
-        self.tickers = tickers
+        self.tickers = list(set(tickers))  # removing duplicates
         self.start_date = start_date
         self.end_date = end_date
         self.output_folder = output_folder
         self.use_adjusted = use_adjusted
-        self.days_per_file = days_per_file
         
         self.data_summary = {}  # used for sanity check after creating the data lake
 
@@ -74,13 +72,13 @@ class DatalakeBuilder:
             self.output_path.mkdir(parents=True, exist_ok=True)
         
         # Initializing storage for metadata
-        self.metadata: Optional[Dict] = {
-            'start_date': None,
-            'end_date': None,
-            'days_per_file': days_per_file,
-            'months': None,
+        str_start_date = self.start_date.strftime('%Y%m%d')
+        str_end_date = self.end_date.strftime('%Y%m%d')
+        self.metadata = {
+            'start_date': str_start_date,
+            'end_date': str_end_date,
             'adjusted_prices': use_adjusted,
-            'tickers': tickers
+            'file_info': {f"{ticker}_{str_start_date}_{str_end_date}.csv": 0 for ticker in tickers}
         }
     
     def build_dataset(self) -> None:
@@ -93,7 +91,6 @@ class DatalakeBuilder:
         3. Saves frames as CSV files
         4. Creates metadata JSON file
         """
-        all_frames_info = []
         
         for ticker in self.tickers:
             print(f"Processing ticker: {ticker}")
@@ -104,7 +101,7 @@ class DatalakeBuilder:
         self._data_sanity_check()
 
         # Create metadata
-        #self._create_metadata(all_frames_info)
+        self._create_metadata()
         
         print(f"Dataset built successfully in folder: {self.output_folder}")
     
@@ -139,25 +136,21 @@ class DatalakeBuilder:
         df = fetchObj.fetch_data()
 
         days, _ = df.shape  # total days (i.e. indices) in df
-
-        if days < self.days_per_file:
-            raise ValueError(f"Insufficient data for ticker: {ticker}. Need at least {self.days_per_file} days of data.")
-            # Program will terminate here.
         
-        total_frames = days // self.days_per_file  # ignoring residual data
+        df.index = df.index.strftime('%Y%m%d')  # converting the datetime indices to string format for compatibility with the csv file name
 
-        # Next, let's slice the entire data into relevant frames.
-        for frame_index in range(total_frames):
-            # Grab a frame with self.days_per_file rows (i.e., dates)
-            df_frame = df.iloc[frame_index * self.days_per_file : (frame_index + 1) * self.days_per_file]
-            filename = f"{ticker}_{frame_index + 1}.csv"
-            self._save_frame_to_csv(df_frame, filename)
+        # Get the csv file name that was initialized for the current ticker.
+        csv_filename = next(filter(lambda key: ticker in key, self.metadata['file_info']))
+        # Update the total number of days that were fetched fir the current ticker
+        self.metadata['file_info'][csv_filename] = days
+
+        self._save_frame_to_csv(df, csv_filename)
 
         # Sanity check: let's print the summary of the data we have just created.
         self.data_summary[ticker] = {
-            'total_frames': total_frames,
+            'total_days': days,
             'first_day': df.index[0],
-            'last_day': df_frame.index[-1],
+            'last_day': df.index[-1]
         }
     
     def _save_frame_to_csv(
@@ -184,13 +177,13 @@ class DatalakeBuilder:
         temp = []
         # Check to make sure total frames match for all tickers
         for _, summary in self.data_summary.items():
-            temp.append(summary['total_frames'])
+            temp.append(summary['total_days'])
 
         if len(set(temp)) > 1:
-            raise ValueError("Total frames do not match for all tickers.")
+            raise ValueError("Total days do not match for all tickers.")
         else:
-            total_frames = list(set(temp))[0]
-            print(f"Total frames match for all tickers={total_frames}")
+            #total_days = list(set(temp))[0]
+            print(f"Total days match for all tickers={temp[0]}")
 
         temp = []
         # Check to make sure first days match for all tickers
@@ -201,8 +194,8 @@ class DatalakeBuilder:
             raise ValueError("First days do not match for all tickers.")
         else:
             # Get first (and only) element from set - convert to list first
-            first_day = list(set(temp))[0]
-            print(f"First days match for all tickers={first_day}")
+            #first_day = list(set(temp))[0]
+            print(f"First days match for all tickers={temp[0]}")
 
         temp = []
         # Check to make sure last days match for all tickers
@@ -213,37 +206,21 @@ class DatalakeBuilder:
             raise ValueError("Last days do not match for all tickers.")
         else:
             # Get first (and only) element from set - convert to list first
-            last_day = list(set(temp))[0]
-            print(f"Last days match for all tickers={last_day}")
+            #last_day = list(set(temp))[0]
+            print(f"Last days match for all tickers={temp[0]}")
 
 
-    def _create_metadata(self, frames_info: List[Dict]) -> None:
+    def _create_metadata(self) -> None:
         """
-        Create and save metadata JSON file.
-        
-        Args:
-            frames_info: List of dictionaries with frame information from all tickers
+        Create and save metadata JSON file.        
         """
-        # Calculate total number of months
-        # This should be consistent across all tickers
-        total_months = self._calculate_total_months()
-        
-        metadata = {
-            'start_date': self.start_date.strftime('%Y-%m-%d'),
-            'end_date': self.end_date.strftime('%Y-%m-%d'),
-            'months': total_months,
-            'tickers': self.tickers
-        }
-        
-        self.metadata = metadata
-        
+
         # Save metadata to JSON file
         metadata_path = self.output_path / 'metadata.json'
         with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=4)
+            json.dump(self.metadata, f, indent=4)
         
         print(f"Metadata saved to: {metadata_path}")
-    
     
     def get_metadata(self) -> Optional[Dict]:
         """
