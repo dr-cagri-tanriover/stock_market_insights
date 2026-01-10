@@ -6,7 +6,6 @@ organizing 30-day OHLCV frames into CSV files with proper naming conventions
 and metadata.
 """
 
-import os
 import json
 import shutil
 import pandas as pd

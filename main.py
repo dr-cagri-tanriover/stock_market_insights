@@ -1,4 +1,5 @@
 from dataset_builder import DatalakeBuilder
+from feature_dataset_builder import FeatureDatasetBuilder
 
 
 def run_datalake_builder():
@@ -20,14 +21,28 @@ def run_datalake_builder():
 
     builderObj.build_dataset()
 
+def run_feature_dataset_construction():
+    
+    raw_data_folder='stock_datalake'
+    metadata_file='metadata.json'
+
+    feature_dataset_filename = 'feature_dataset.csv'  # file will be created in a subfolder called 'feature_datasets'
+
+    days_per_feature = 30   # Total number of days (i.e., prices) that will be used to compute each feature
+
+    featObj = FeatureDatasetBuilder(raw_data_folder, metadata_file, feature_dataset_filename, days_per_feature)
+
+    featObj.build_feature_dataset()
+
+
 def main():
     # Step 1 - Build the high level data lake for specified parameters
-    run_datalake_builder()
+    #run_datalake_builder()
 
     # Step 2 - If a data lake has been built previously, you can start from this step to start using it.
     # This step involves creating a dataset (as a subset of the data lake) for model training and testing
     # as well as generating ground truth labels for the dataset.
-    #run_dataset_construction()
+    run_feature_dataset_construction()
 
 
 if __name__ == "__main__":

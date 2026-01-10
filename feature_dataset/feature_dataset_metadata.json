@@ -1,0 +1,30 @@
+{
+    "start_date": "20140101",
+    "end_date": "20241231",
+    "adjusted_prices": true,
+    "file_info": {
+        "META_20140101_20241231.csv": 2767,
+        "AAPL_20140101_20241231.csv": 2767,
+        "AMZN_20140101_20241231.csv": 2767,
+        "NFLX_20140101_20241231.csv": 2767,
+        "GOOG_20140101_20241231.csv": 2767
+    },
+    "features_info": {
+        "days_per_feature": 30,
+        "META": {
+            "total_samples": 2738
+        },
+        "AAPL": {
+            "total_samples": 2738
+        },
+        "AMZN": {
+            "total_samples": 2738
+        },
+        "NFLX": {
+            "total_samples": 2738
+        },
+        "GOOG": {
+            "total_samples": 2738
+        }
+    }
+}
