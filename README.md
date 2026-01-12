@@ -486,7 +486,7 @@ We need to apply the following 5 rules in the listed order to successfully creat
 > A frame is classified as TREND_DOWN if it has a negative slope and trend dominates noise.  
 > *Criteria:*    
 > - b <= -0.003  i.e., strong negative slope  
-> - AND ts > 0.36 i.e., strong trend
+> - AND ts >= 0.36 i.e., strong trend
 > - AND z < 0.46 i.e., guard against oscillatory frames  
 > - AND v <0.02  i.e., guard against very noisy "trends"   
 

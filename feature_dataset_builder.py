@@ -191,9 +191,11 @@ class FeatureDatasetBuilder:
         # Compute the slope of the linear fit to the prices in the sample_group
         slope = get_slope_of_log_prices_line(sample_group)
         zcr = get_zcr_of_prices(sample_group)
-        volatility = random.choice((0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09))
-        trend_strength = random.choice((0.3, 0.5, 0.7,0.9))
-        gt = random.choice(("STATIONARY", "TREND_UP", "TREND_DOWN", "OSCILLATING", "OTHER"))
+        volatility = get_volatility_of_returns(sample_group)
+        trend_strength = abs(slope) / volatility
+
+        features = {'slope': slope, 'zcr': zcr, 'volatility': volatility, 'trend_strength': trend_strength}
+        gt = get_ground_truth_label(features)
 
         return {
             'slope': slope,
@@ -235,6 +237,7 @@ def get_slope_of_log_prices_line(sample_group: pd.DataFrame) -> float:
     
     return float(slope)
 
+
 def get_zcr_of_prices(sample_group: pd.DataFrame) -> float:
     """
     Compute the zero crossing rate of the price changes over a time window given by the number of rows in the sample_group.
@@ -274,3 +277,48 @@ def get_zcr_of_prices(sample_group: pd.DataFrame) -> float:
     zcr = total_sign_changes / (len(sign_of_differences) - 1)  # total number of sign changes divided by the total number of signs available.)
     
     return zcr
+
+
+def get_volatility_of_returns(sample_group: pd.DataFrame) -> float:
+    """
+    Compute the volatility of the returns in the sample_group. Daily returns as calculated as logs.
+
+    Args:
+        sample_group: DataFrame containing the sample data for prices on multiple days
+        
+    Returns:
+        Volatility of the returns in the sample_group
+    """
+
+    log_returns = np.log(sample_group['price'].values[1:] / sample_group['price'].values[:-1])  # ln(price(t)/price(t-1))
+
+    daily_volatility = np.std(log_returns, ddof=1)  # Use n-1 in denominator (ddof=1 for sample std)
+
+    return float(daily_volatility)
+
+def get_ground_truth_label(features: Dict) -> str:
+    f"""
+    Compute the ground truth label for the given features.
+    features.keys()=['slope', 'zcr', 'volatility', 'trend_strength']
+    
+    Args:
+        features: Dictionary containing the features
+        
+    Returns:
+        Ground truth label for the given features
+    """
+
+    gt_label = 'OTHER'  # by default
+    
+    if abs(features['slope']) < 0.001 and features['zcr'] < 0.46 and features['volatility'] <= 0.008:
+        gt_label = 'STATIONARY'
+    elif abs(features['trend_strength']) < 0.36 and features['zcr'] >= 0.46 and features['volatility'] > 0.008:
+        gt_label = 'OSCILLATING'
+    elif features['slope'] >= 0.003 and features['trend_strength'] >= 0.36 and features['zcr'] < 0.46 and features['volatility'] < 0.02:
+        gt_label = 'TREND_UP'
+    elif features['slope'] <= -0.003 and features['trend_strength'] >= 0.36 and features['zcr'] < 0.46 and features['volatility'] < 0.02:
+        gt_label = 'TREND_DOWN'
+    else:
+        gt_label = 'OTHER'
+    
+    return gt_label
