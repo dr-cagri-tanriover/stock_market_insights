@@ -529,7 +529,7 @@ We will have one csv file that will include all the stock tickers in the raw dat
 This csv file will be called **feature_dataset.csv** and will include the following column names:
 
 **'ticker':** Name of the stock ticker  
-**'end_date':** Last date of the 30-day profile used for calculating the features in YYYMMDD format
+**'end_date':** Last date of the 30-day profile used for calculating the features in YYYMMDD format  
 **'b':** Slope of the log prices  
 **'zcr':** Zero crossing rate (log-return based sign changes)  
 **'v':** Daily volatility  

@@ -189,8 +189,8 @@ class FeatureDatasetBuilder:
         """
 
         # Compute the slope of the linear fit to the prices in the sample_group
-        slope = random.choice((-1, 0, 1))
-        zcr = random.choice((0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9))
+        slope = get_slope_of_log_prices_line(sample_group)
+        zcr = get_zcr_of_prices(sample_group)
         volatility = random.choice((0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09))
         trend_strength = random.choice((0.3, 0.5, 0.7,0.9))
         gt = random.choice(("STATIONARY", "TREND_UP", "TREND_DOWN", "OSCILLATING", "OTHER"))
@@ -206,3 +206,71 @@ class FeatureDatasetBuilder:
 
 # Functions to compute each feature listed above
 
+def get_slope_of_log_prices_line(sample_group: pd.DataFrame) -> float:
+    """
+    Compute the slope of the linear fit (line of best fit) to the log of the prices in the sample_group.
+    Any $0 price is replaced with a very small value (1e-10) to avoid log(0) error.
+    
+    Args:
+        sample_group: DataFrame containing the sample data for prices on multiple days (given by the number of rows in the dataframe)
+        
+    Returns:
+        Slope of the linear fit (line of best fit) to the log of the prices in the sample_group
+    """
+
+    # Replace zero prices with very small value to avoid log(0) error
+    prices = sample_group['price'].replace(0, 1e-10)
+    
+    # Take log of prices
+    log_prices = np.log(prices.values)  # accessing the values in the Series object to convert to numpy array
+    
+    # Create x values (time indices: 0, 1, 2, ..., n-1)
+    x = np.arange(len(log_prices))
+    
+    # Fit line of best fit: y = a + bx using least squares
+    # Using numpy polyfit (degree 1 for linear fit)
+    # Returns [slope, intercept]
+    coefficients = np.polyfit(x, log_prices, deg=1)
+    slope = coefficients[0]  # First coefficient is the slope
+    
+    return float(slope)
+
+def get_zcr_of_prices(sample_group: pd.DataFrame) -> float:
+    """
+    Compute the zero crossing rate of the price changes over a time window given by the number of rows in the sample_group.
+    
+    Args:
+        sample_group: DataFrame containing the sample data for prices on multiple days
+        
+    Returns:
+        Zero crossing rate of the price changes in the sample_group
+    """
+
+    difference_in_prices = np.diff(sample_group['price'].values)  # computing the difference in prices between consecutive days
+    sign_of_differences = np.sign(difference_in_prices)  # computing the sign of the difference in prices (outputs 1, 0 or -1)
+
+    # We need to handle 0 occurences in sign_of_differences before counting the zero crossings
+    # Find index of first non-zero element
+    non_zero_indices = np.nonzero(sign_of_differences)[0]
+    if len(non_zero_indices) > 0:
+        first_non_zero_index = non_zero_indices[0]
+        if first_non_zero_index > 0:
+            # need to pad the the signs moving towards index 0 with the sign of the first non-zero element
+            sign_of_differences[:first_non_zero_index] = sign_of_differences[first_non_zero_index]
+        #else: no need to pad the signs moving towards index 0 with the sign of the first non-zero element
+    else:
+        # All elements are zero - no price changes
+        first_non_zero_index = None
+        # simply pad all sign elements to a non-zero value (either 1 or -1)
+        sign_of_differences[:] = 1
+
+    # At this point, there may still be zero entries in sign_of_differences. We need to remove them.
+    # We simply sustain the previous non-zero sign for the zero entries.
+    sign_of_differences = np.array([sign_of_differences[i-1] if sign_of_differences[i] == 0 else sign_of_differences[i] for i in range(len(sign_of_differences))])
+
+    # At this point, there should be no zero entries in sign_of_differences. We can begin counting the zero crossings now.
+    total_sign_changes = int(np.sum(sign_of_differences[1:] != sign_of_differences[:-1]))
+
+    zcr = total_sign_changes / (len(sign_of_differences) - 1)  # total number of sign changes divided by the total number of signs available.)
+    
+    return zcr
