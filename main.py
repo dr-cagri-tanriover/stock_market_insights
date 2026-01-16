@@ -61,10 +61,22 @@ def get_feature_dataset_insights():
     # above first makes sense.
     #features_to_plot = ['trend_strength', 'zcr', 'volatility', 'slope']
 
-    features_to_plot = {'trend_strength': {'thresholds': [('strength_th', 0.36)]},
-                        'zcr': {'thresholds': [('hi_osc_th', 0.46)]},
-                        'volatility': {'thresholds': [('hi_noise_th', 0.02), ('lo_vol_th', 0.008)]},
-                        'slope': {'thresholds': [('upward_th', 0.003), ('downward_th', -0.003), ('flatness_lo', -0.001), ('flatness_hi', 0.001)]}
+    features_to_plot = {'trend_strength': {
+                                            'thresholds': [('strength_th', 0.36)],
+                                            'use_in_mahalanobis_distance': True
+                                            },
+                        'zcr': {
+                                'thresholds': [('hi_osc_th', 0.46)],
+                                'use_in_mahalanobis_distance': True
+                                },
+                        'volatility': {
+                                        'thresholds': [('hi_noise_th', 0.02), ('lo_vol_th', 0.008)],
+                                        'use_in_mahalanobis_distance': True
+                                        },
+                        'slope': {
+                                    'thresholds': [('upward_th', 0.003), ('downward_th', -0.003), ('flatness_lo', -0.001), ('flatness_hi', 0.001)],
+                                    'use_in_mahalanobis_distance': True  # slope provides sign information and trend_strength uses its magnitude.
+                                    }
     }
 
 

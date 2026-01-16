@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 from pathlib import Path
+import pandas as pd
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
@@ -23,7 +24,7 @@ class ReportStyle():
     IMAGE_SCALING_FACTOR=0.90  # 0.95 plot the original image to fit to the pdf page (an additional scaling is done to ensure that!).
 
 class reporter():
-    def __init__(self, report_filepath: Path):
+    def __init__(self, report_filepath: Path, author: str = None, title: str = None, subject: str = None):
         """
             Sample self.report_dict structure:
 
@@ -69,6 +70,9 @@ class reporter():
         self.report_filepath = Path(report_filepath)
         self.report_dict = {}  # Report content will be stored in a dictionary. Each page will be a key in this dictionary.
         self.basic_style = getSampleStyleSheet()
+        self.author = author
+        self.title = title
+        self.subject = subject
 
     def get_style(self, style_type: ReportDataType):
         
@@ -122,8 +126,57 @@ class reporter():
                 firstLineIndent=0,
                 textColor=colors.black
             )
+
+        elif style_type == ReportDataType.TABLE:
+            return TableStyle([
+                        # Grid lines (borders)
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),  # All cells with grey grid
+                        
+                        # Header row formatting (first row)
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),  # Grey background for header
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),  # White text for header
+                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),  # Center align header
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Bold font for header
+                        ('FONTSIZE', (0, 0), (-1, 0), 11),  # Font size for header
+                        
+                        # Data rows formatting
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),  # Light background for data rows
+                        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),  # Black text for data
+                        ('ALIGN', (0, 1), (-1, -1), 'CENTER'),  # Center align data cells
+                        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),  # Regular font for data
+                        ('FONTSIZE', (0, 1), (-1, -1), 11),  # Font size for data cells
+                        
+                        # Cell padding
+                        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                        ('TOPPADDING', (0, 0), (-1, -1), 6),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                        
+                        # Alternating row colors (optional - for better readability)
+                        # ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+                    ])
+
         else:
             return getSampleStyleSheet()['Normal']
+
+    # Function to set PDF metadata on first page
+    def on_first_page(self, canvas, doc):
+        if self.author:
+            canvas.setAuthor(self.author)
+        if self.title:
+            canvas.setTitle(self.title)
+        if self.subject:
+            canvas.setSubject(self.subject)
+        # You can also set other metadata:
+        # canvas.setKeywords("keywords, here")
+        # canvas.setCreator("Your Application Name")
+
+    def open_new_page(self, page_title: str):
+        """
+        Create a new empty page in the report and add a page title to it.
+        """
+        self.new_page() # A new page
+        self.print(ReportDataType.HEADING_2, page_title)
 
 
     def new_page(self, title: str = None):
@@ -138,7 +191,7 @@ class reporter():
         if title is not None:
             self.print(ReportDataType.TITLE, title)
 
-    def add_table_data(self, table_dict: Dict[str, List[Any]]):
+    def add_table_data(self, table_LoL: List[List[Any]]):
         """
         Add a table section to the report.
 
@@ -148,7 +201,7 @@ class reporter():
         
         self.indices.field_index += 1  # Data will be added to a new field.
         new_key = f"{ReportDataType.TABLE}_{self.indices.field_index}"
-        self.report_dict[self.indices.page_index][new_key] = table_dict
+        self.report_dict[self.indices.page_index][new_key] = table_LoL
 
 
     """
@@ -159,7 +212,36 @@ class reporter():
         new_key = f"{ReportDataType.PARAGRAPH}_{self.indices.field_index}"
         self.report_dict[self.indices.page_index][new_key] = paragraph_str
     """
-    
+  
+
+    def print_dataframe_as_table(self, df: pd.DataFrame):
+        """
+        Print a dataframe as a table to the report.
+        df content will be transformed into list of lists as expected by the Table class.
+
+        Args:
+            dataframe: Pandas dataframe to print as a table
+        """
+
+        # Format numbers to 2 decimal places before converting to string
+        df_formatted = df.round(3)  # Float precision of 3 decimal places
+        LoL = df_formatted.astype(str).values.tolist()  # Only gets the cell values as strings. No row or column names
+
+        row_names = df_formatted.astype(str).index.tolist()
+        col_names = df_formatted.astype(str).columns.tolist()
+        col_names.insert(0, " ")  # Add a space character to row and column intersection cell
+
+        for idx, row_name in enumerate(row_names):
+            LoL[idx].insert(0, row_name)
+        
+        # As the final step, insert the col_names into LoL as the first list entry
+        LoL.insert(0, col_names)
+
+        # Then add the table to the ongoing report content list
+        self.add_table_data(LoL)
+
+
+
     def print_image(self, image_filepath: Path):
         """
         Add an image section to the report. Each string value in image_dict will be a path to an image file.
@@ -189,8 +271,16 @@ class reporter():
         # Create the report directory if it doesn't exist
         self.report_filepath.parent.mkdir(parents=True, exist_ok=True)
 
-        # Create the report file
-        doc = SimpleDocTemplate(str(self.report_filepath), pagesize=letter) 
+        # Create the report file with smaller margins for better table width utilization
+        # Default margins are typically 72 points (1 inch), reducing to 18 points (0.25 inch)
+        doc = SimpleDocTemplate(
+            str(self.report_filepath), 
+            pagesize=letter,
+            leftMargin=18,    # Reduced from default 72 to 18 points (0.25 inch / 1/4 inch)
+            rightMargin=18,   # Reduced from default 72 to 18 points (0.25 inch / 1/4 inch)
+            topMargin=72,     # Keep default top margin (72 points = 1 inch)
+            bottomMargin=72   # Keep default bottom margin (72 points = 1 inch)
+        ) 
 
         content_list = []       # Report content will be parsed and appended to this list 
 
@@ -202,8 +292,16 @@ class reporter():
                 data_type = data_type_key.split("_")[0]  # separate the data type string from the field index
                 if data_type == ReportDataType.TABLE:
                     # Write table type data to report
-                    #TBD
-                    table = Table(data)
+                    # Calculate column widths to fit page width
+                    # Letter page width: 612 points, margins: 36 points each side
+                    available_width = doc.width - (doc.leftMargin + doc.rightMargin)
+                    num_cols = len(data[0]) if data else 1
+                    col_width = available_width / num_cols if num_cols > 0 else available_width
+                    col_widths = [col_width] * num_cols
+                    
+                    table = Table(data, colWidths=col_widths)
+                    # Apply custom table style
+                    table.setStyle(self.get_style(data_type))
                     content_list.append(table)
                 elif data_type == ReportDataType.IMAGE:
                     # Write image type data to report
@@ -238,9 +336,8 @@ class reporter():
             if page_index < len(self.report_dict):
                 # Add a page break before each page except the last one
                 content_list.append(PageBreak())
+        
+        # Build the document with metadata callback
+        doc.build(content_list, onFirstPage=self.on_first_page)
 
-        # Add the complete report content to the document
-        doc.build(content_list)
-
-        pass
 

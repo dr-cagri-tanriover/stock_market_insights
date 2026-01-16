@@ -209,3 +209,4 @@ __marimo__/
 # User ignore items
 plots/
 *.pdf
+temp.py

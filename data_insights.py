@@ -30,8 +30,12 @@ class DataInsights:
     @print_divider("INITIALIZING DATA INSIGHTS OBJECT")
     def __init__(self, path: str | Path, reportout_filepath: Path, pdf_report_title: str):
         self.df = pd.DataFrame()
-        
-        self.reportObj = rprt.reporter(reportout_filepath)
+                
+        self.reportObj = rprt.reporter(report_filepath=reportout_filepath,
+                                        author="Cagri Tanriover",
+                                        title=pdf_report_title,
+                                        subject="Stock ticker price regime classification")
+
         self.pdf_report_title = pdf_report_title
 
         try:
@@ -64,7 +68,7 @@ class DataInsights:
         """
         self.reportObj.new_page(title=self.pdf_report_title)  # Start a new page in the pdf report created. Also add the report title here.
 
-        self.reportObj.print(rprt.ReportDataType.HEADING_2, "BASIC DATAFRAME INFORMATION")
+        self.reportObj.print(rprt.ReportDataType.HEADING_2, "BASIC DATAFRAME INFORMATION")  # Add a page title for the basic information section.
 
         self.reportObj.print(rprt.ReportDataType.BODY, f"Number of rows: {len(self.df)}")  # Print the paragraph to the console as well as the pdf report
         self.reportObj.print(rprt.ReportDataType.BODY, f"Number of columns: {len(self.df.columns)}")  # Print the paragraph to the console as well as the pdf report
@@ -92,12 +96,18 @@ class DataInsights:
         # Optionally sort rows in according to "Missing Elements" in ascending order.
         missing_record_df = missing_record_df.loc[missing_record_df['Missing Elements'] > 0].sort_values('Missing Elements', ascending=True)
 
+        self.reportObj.open_new_page(page_title="MISSING VALUES ANALYSIS")  # Add an empty page in the pdf report, and add the page title to the page.
+
         if len(missing_record_df):
             # There is at least one row with missing elements
-            print(f"Found missing values in dataset!")
+            self.reportObj.print(rprt.ReportDataType.BODY, f"Found missing values in dataset!")  # Print the paragraph to the console as well as the pdf report
+
             print(f"{self.df.to_string(index=False)}")
+ 
+            self.reportObj.print_dataframe_as_table(missing_record_df)
         else:
-            print(f"There are no missing elements in the dataset !!")
+            # Following will be displayed on the console as well.
+            self.reportObj.print(rprt.ReportDataType.BODY, f"There are no missing elements in the dataset !!")  # Print the paragraph to the console as well as the pdf report
 
 
     @print_divider("DATA TYPES SUMMARY")
@@ -110,28 +120,49 @@ class DataInsights:
         categorical_columns = self.df.select_dtypes(include=["object"]).columns.tolist()
         datetime_columns = self.df.select_dtypes(include=["datetime", "datetime64"]).columns.tolist()
 
+        self.reportObj.open_new_page(page_title="DATA TYPES SUMMARY")  # Add an empty page in the pdf report, and add the page title to the page.
+
         if len(numeric_columns) > 0:
-            print(f"Found {len(numeric_columns)} numeric columns in dataset:")
+            message = f"Found {len(numeric_columns)} numeric columns in dataset:"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
+
             for i, col_name in enumerate(numeric_columns):
-                print(f"{i} - {col_name}")
+                #print(f"{i} - {col_name}")
+                message = f"{i} - {col_name}"
+                self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
         else:
             print("No numerical data found in dataset")
+            message = "No numerical data found in dataset"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
+        message="\n\n"
+        self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
         if len(categorical_columns) > 0: 
-            print(f"\nFound {len(categorical_columns)} categorical columns in dataset:")
+            #print(f"\nFound {len(categorical_columns)} categorical columns in dataset:")
+            message = f"Found {len(categorical_columns)} categorical columns in dataset:"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
             for i, col_name in enumerate(categorical_columns):
-                print(f"{i} - {col_name}")
+                #print(f"{i} - {col_name}")
+                message = f"{i} - {col_name}"
+                self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
         else:
-            print("\nNo categorical data found in dataset")
+            message = "No categorical data found in dataset"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
+        message="\n\n"
+        self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
         if len(datetime_columns) > 0:
-            print(f"\nFound {len(datetime_columns)} datetime columns in dataset:")
+            message = f"Found {len(datetime_columns)} datetime columns in dataset:"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
             for i, col_name in enumerate(datetime_columns):
-                print(f"{i} - {col_name}")
+                #print(f"{i} - {col_name}")
+                message = f"{i} - {col_name}"
+                self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
         else:
-            print("\nNo datetime data found in dataset")
+            message = "No datetime data found in dataset"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
 
     @print_divider("NUMERIC COLUMNS STATISTICS")
@@ -141,6 +172,8 @@ class DataInsights:
         """
         
         numeric_data_exists = lambda df: True if  len(df.select_dtypes(include=['number']).columns.tolist()) > 0 else False
+
+        self.reportObj.open_new_page(page_title="NUMERIC COLUMNS STATISTICS")  # Add an empty page in the pdf report, and add the page title to the page.
 
         if numeric_data_exists(self.df):
             summary = self.df.describe(include='number')  # general statistics in summary data frame
@@ -153,9 +186,10 @@ class DataInsights:
 
             #print(f"{summary.to_string()}")  # display full summary as text
             prt.print_dataframe(summary)
+            self.reportObj.print_dataframe_as_table(summary)  # print into pdf report as well
         else:
-            print(f"No numeric data exists in dataset...")
-
+            message = "No numeric data exists in dataset..."
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
     #@print_divider("NUMERIC COLUMNS DISTRIBUTION PLOTS")
     @print_line
@@ -260,8 +294,7 @@ class DataInsights:
             fig.savefig(str(save_path), dpi=300, bbox_inches='tight')
             print(f"\nPlot saved to: {save_path}")
             # Add the saved plot filepath to the report
-            self.reportObj.new_page() # A new page for current analysis output
-            self.reportObj.print(rprt.ReportDataType.HEADING_2, "NUMERIC COLUMNS DISTRIBUTION PLOTS")
+            self.reportObj.open_new_page(page_title="NUMERIC COLUMNS DISTRIBUTION PLOTS")  # Add an empty page in the pdf report, and add the page title to the page.
             self.reportObj.print_image(save_path)
         
         if display_plots == True:
@@ -281,16 +314,24 @@ class DataInsights:
 
         categorical_columns_list = self.df.select_dtypes(include=['object']).columns.to_list()
 
+        self.reportObj.open_new_page(page_title="CATEGORICAL COLUMNS STATISTICS")  # Add an empty page in the pdf report, and add the page title to the page.
+
         if len(categorical_columns_list):
             # There are categorical columns
-            print(f"High level summary of categorical columns:")
-            prt.print_dataframe(self.df.describe(include='object'))                
-            #print(f"{self.df.describe(include='object').to_string()}")
+            #print(f"High level summary of categorical columns:")
+            #prt.print_dataframe(self.df.describe(include='object'))
+            message = f"High level summary of categorical columns:\n\n"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
+            self.reportObj.print_dataframe_as_table(self.df.describe(include='object'))  # print into pdf report as well
+            self.reportObj.print(rprt.ReportDataType.BODY, "\n\n")  # Print the paragraph to the console as well as the pdf report
 
             # Next display number of unique items and their occurence frequency (where manageable) for each categorical column.
             for col in categorical_columns_list:
                 print(f"\n" + "~"*80)
-                print(f"Categorical feature (column): {col}")
+                #print(f"Categorical feature (column): {col}")
+                message = f"Categorical feature (column): {col}\n\n"
+                self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
+
                 n_unique_items = self.df[col].nunique()
                 print(f"Number of unique items: {n_unique_items}")
 
@@ -299,22 +340,33 @@ class DataInsights:
                     printPd = pd.Series(unique_dict).reset_index()  # Convert series to dataframe
                     printPd.columns = ['Item', 'Count']  # Assign custom column names to enw dataframe              
                     prt.print_dataframe(printPd, show_index=False)  # Not showing enumerated indices as they are not informative
+                    self.reportObj.print_dataframe_as_table(printPd)  # print into pdf report as well
+                    self.reportObj.print(rprt.ReportDataType.BODY, "\n\n")  # Print the paragraph to the console as well as the pdf report
                 else:
-                    print(f"\nNumber of unique items > {N_MAX}. Skipping item listing...")
+                    #print(f"\nNumber of unique items > {N_MAX}. Skipping item listing...")
+                    message = f"Number of unique items > {N_MAX}. Skipping item listing..."
+                    self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
                 # What is the most frequent item in each categorical column?
                 most_frequent_col_items = self.df[col].mode().to_list()
                 if len(most_frequent_col_items) <= N_MAX:
                     print(f"\nHighest frequency items:")
+                    message = f"Highest frequency items:\n\n"
+                    self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
                     itemDict = {item:self.df[col].value_counts()[item] for item in most_frequent_col_items}
                     printPd = pd.Series(itemDict).reset_index()
                     printPd.columns = ['Item', 'Count']
                     prt.print_dataframe(printPd, show_index=False)
+                    self.reportObj.print_dataframe_as_table(printPd)  # print into pdf report as well
                 else:
-                    print(f"\nThere are >{N_MAX} items at high frequency. Skipping item listing...")
+                    #print(f"\nThere are >{N_MAX} items at high frequency. Skipping item listing...")
+                    message = f"There are >{N_MAX} items at high frequency. Skipping item listing..."
+                    self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
         else:
-            print(f"No categorical data exists in dataset...")
+            #print(f"No categorical data exists in dataset...")
+            message = "No categorical data exists in dataset..."
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
 
     @print_divider("NUMERICAL STATISTICS FOR CATEGORICAL COLUMNS")
@@ -328,14 +380,20 @@ class DataInsights:
             print("No categorical data found in dataset...")
             return
 
+        self.reportObj.open_new_page(page_title="NUMERICAL STATISTICS FOR CATEGORICAL COLUMNS")  # Add an empty page in the pdf report, and add the page title to the page.
+
         for each_category in categorical_columns:
-            print(f"Generating descriptive statistics for [{each_category}] categorical column:")
+            ##print(f"Generating descriptive statistics for [{each_category}] categorical column:")
+            message = f"Generating descriptive statistics for [{each_category}] categorical column:\n\n"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
             # Get unique items in each_category column to iterate as needed
             unique_items = self.df[each_category].unique()
 
             for each_item in unique_items:
-                print(f" Generating statistics for item [{each_item}] in [{each_category}] column")
+                #print(f" Generating statistics for item [{each_item}] in [{each_category}] column")
+                message = f" Generating statistics for item [{each_item}] in [{each_category}] column\n\n"
+                self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
                 _subdf = self.df[self.df[each_category] == each_item]
                 _subdf_summary = _subdf.describe(include='number')
@@ -346,7 +404,8 @@ class DataInsights:
                     _subdf_summary.loc['kurtosis', each_column] = _subdf[each_column].kurtosis()
  
                 prt.print_dataframe(_subdf_summary)
-
+                self.reportObj.print_dataframe_as_table(_subdf_summary)  # print into pdf report as well
+                self.reportObj.print(rprt.ReportDataType.BODY, "\n\n")  # Print the paragraph to the console as well as the pdf report
 
     @print_divider("CORRELATION ANALYSIS (applicable to the numeric columns only)")
     def correlation_analysis(self):
@@ -357,29 +416,48 @@ class DataInsights:
         
         numeric_columns = self.df.select_dtypes(include=["number"]).columns.tolist()
         
+        self.reportObj.open_new_page(page_title="CORRELATION ANALYSIS (for numerical columns only)")  # Add an empty page in the pdf report, and add the page title to the page.
+
         if len(numeric_columns) == 0:
-            print("No numerical data found in dataset...")
+            #print("No numerical data found in dataset...")
+            message = "No numerical data found in dataset..."
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
             return
         
         if len(numeric_columns) < 2:
-            print(f"Found only {len(numeric_columns)} numeric column(s). At least 2 numeric columns are required for correlation analysis.")
+            #print(f"Found only {len(numeric_columns)} numeric column(s). At least 2 numeric columns are required for correlation analysis.")
+            message = f"Found only {len(numeric_columns)} numeric column(s). At least 2 numeric columns are required for correlation analysis."
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
             return
         
-        print(f"Found {len(numeric_columns)} numeric columns in dataset:")
+        #print(f"Found {len(numeric_columns)} numeric columns in dataset:")
+        message = f"Found {len(numeric_columns)} numeric columns in dataset:\n\n"
+        self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
         for i, col_name in enumerate(numeric_columns):
-            print(f"  {i+1}. {col_name}")
+            #print(f"  {i+1}. {col_name}")
+            message = f"  {i+1}. {col_name}\n"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report          
+        self.reportObj.print(rprt.ReportDataType.BODY, "\n\n")  # Print the paragraph to the console as well as the pdf report
         
         # Select only the original numeric columns
         numeric_df = self.df[numeric_columns]
         
         # Pearson Correlation
-        print(f"\nPearson Correlation Matrix:")
+        #print(f"\nPearson Correlation Matrix:")
+        message = f"Pearson Correlation Matrix:\n\n"
+        self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
+
         pearson_correlation_matrix = numeric_df.corr(method='pearson')
         #print(f"{pearson_correlation_matrix.to_string()}")
         prt.print_dataframe(pearson_correlation_matrix, justify_numeric="center")
+        self.reportObj.print_dataframe_as_table(pearson_correlation_matrix)  # print into pdf report as well
+        self.reportObj.print(rprt.ReportDataType.BODY, "\n\n")  # Print the paragraph to the console as well as the pdf report
 
         # Find strong Pearson correlations
-        print(f"\nStrong Pearson Correlations Criterion: |r| > 0.5")
+        #print(f"\nStrong Pearson Correlations Criterion: |r| > 0.5")
+        message = f"Strong Pearson Correlations Criterion: |r| > 0.5\n\n"
+        self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
+
         strong_pearson_corrs = []
         for i in range(len(pearson_correlation_matrix.columns)):
             for j in range(i+1, len(pearson_correlation_matrix.columns)):
@@ -391,18 +469,29 @@ class DataInsights:
         
         if len(strong_pearson_corrs) > 0:
             for col1, col2, corr_val in strong_pearson_corrs:
-                print(f"  {col1} ↔ {col2}: {corr_val:.3f}")
+                #print(f"  {col1} ↔ {col2}: {corr_val:.3f}")
+                message = f"  {col1} ↔ {col2}: {corr_val:.3f}\n"
+                self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
         else:
-            print("\tNo strong Pearson correlations found !")
-        
+            #print("\tNo strong Pearson correlations found !")
+            message = f"\tNo strong Pearson correlations found !\n"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
+
+        self.reportObj.print(rprt.ReportDataType.BODY, "\n\n")  # Print the paragraph to the console as well as the pdf report
+
         # Spearman Correlation
-        print(f"\nSpearman Correlation Matrix:")
+        #print(f"\nSpearman Correlation Matrix:")
+        message = f"Spearman Correlation Matrix:\n\n"
         spearman_correlation_matrix = numeric_df.corr(method='spearman')
         #print(f"{spearman_correlation_matrix.to_string()}")
         prt.print_dataframe(spearman_correlation_matrix, justify_numeric="center")
+        self.reportObj.print_dataframe_as_table(spearman_correlation_matrix)  # print into pdf report as well
+        self.reportObj.print(rprt.ReportDataType.BODY, "\n\n")  # Print the paragraph to the console as well as the pdf report
 
         # Find strong Spearman correlations
-        print(f"\nStrong Spearman Correlations Criterion: |r| > 0.5:")
+        #print(f"\nStrong Spearman Correlations Criterion: |r| > 0.5:")
+        message = f"Strong Spearman Correlations Criterion: |r| > 0.5\n\n"
+        self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
         strong_spearman_corrs = []
         for i in range(len(spearman_correlation_matrix.columns)):
             for j in range(i+1, len(spearman_correlation_matrix.columns)):
@@ -414,9 +503,13 @@ class DataInsights:
         
         if len(strong_spearman_corrs) > 0:
             for col1, col2, corr_val in strong_spearman_corrs:
-                print(f"  {col1} ↔ {col2}: {corr_val:.3f}")
+                #print(f"  {col1} ↔ {col2}: {corr_val:.3f}")
+                message = f"  {col1} ↔ {col2}: {corr_val:.3f}\n"
+                self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
         else:
-            print("\tNo strong Spearman correlations found !")
+            #print("\tNo strong Spearman correlations found !")
+            message = f"\tNo strong Spearman correlations found !\n"
+            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
 
 
     @print_divider("CONFUSION RISK ANALYSIS (to see separability of classes in the dataset)")
@@ -437,6 +530,122 @@ class DataInsights:
         # - where thresholds cut through probability mass
         # - which classes dominate specific value ranges
         self._kde_plot_analysis(features_dict, class_column, save_folder, display_feature_thresholds=True, display_plots=display_plots)
+
+        # Method 3 - Mahalanobis distance analysis to see the level of overlap in the feature space.
+        # This will tell us how separable the classes are in feature space, before training a model.
+        # In other words, this distance is a measure of how far apart the class centers are in terms of the 
+        # measured units of typical within-class noise. (Euclidean distance is not a good fit for this purpose because it is not scale-invariant)
+        # We will get one distance per class pair.
+        # The calculated distances between pairs of classes will also be comparable.
+        # The distance will reflect the signal vs noise, not class size or regime frequency.
+        self._mahalanobis_distance_analysis(features_dict, class_column, save_folder, display_plots=display_plots)
+
+
+    def _mahalanobis_distance_analysis(self, features_dict: dict, 
+    class_column: str, 
+    save_folder: str, 
+    display_plots: bool = False,
+    standardize: bool = True,
+    shrinkage: float = 1e-3,   # diagonal regularization for numerical stability prior to matrix inversion
+    ):
+        """
+        Calculate the Mahalanobis distance between each pair of classes for the selected features in the feature space.
+        Mahalanobis distance analysis to see the level of overlap in the feature space.
+        This will tell us how separable the classes are in feature space, before training a model.
+        In other words, this distance is a measure of how far apart the class centers are in terms of the 
+        measured units of typical within-class noise. (Euclidean distance is not a good fit for this purpose because it is not scale-invariant)
+        - We will get one distance per class pair.
+        - The calculated distances between pairs of classes will also be comparable.
+        - The distance will reflect the signal vs noise, not class size or regime frequency.
+
+        Args:
+            features_dict: Dictionary of features to analyze
+            class_column: Name of the column containing the class labels
+            save_folder: Folder to save the plots
+            display_plots: Whether to display the plots interactively
+        """
+
+        all_features = list(features_dict.keys())
+        # Only use the features requested by the user         
+        features_to_plot = [feature for feature in all_features if features_dict[feature]['use_in_mahalanobis_distance'] == True]
+
+        if len(features_to_plot) < 2:
+            raise ValueError("At least 2 FEATURES are required for Mahalanobis distance analysis.")
+        
+        labels = list(self.df[class_column].unique())
+        if len(labels) < 2:
+            raise ValueError("At least 2 CLASSES are required for Mahalanobis distance analysis.")
+
+        class_pairs = []
+        # Mahalanobis distance will be calculated for each pair of classes.
+        for first_label in labels:
+            for second_label in labels:
+                if first_label != second_label and (first_label, second_label) not in class_pairs and (second_label, first_label) not in class_pairs:
+                    class_pairs.append((first_label, second_label))
+
+        df = self.df[features_to_plot + [class_column]]  # portion of interest in our dataset as new dataframe
+        X = df[features_to_plot].to_numpy(dtype=float)  # create numpy array with relevant features
+        y = df[class_column].to_numpy()  # create numpy array with class labels
+
+        if standardize == True:
+            X_mean = X.mean(axis=0)  # mean across all rows for each feature (i.e., column)
+            X_std = X.std(axis=0, ddof = 0.0)  # standard deviation across all rows for each feature (i.e., column)
+            X_std[X_std == 0] = 1.0  # set to 1.0 to avoid division by zero (result of x-mean = 0 for all values in a column)
+            X = (X - X_mean) / X_std  # standardize the features
+        
+        # Calculate pooled covariance matrix next.
+        #C_pooled = sum((n_k - 1) * C_k)) / sum((n_k - 1)), where k represents each of the two classes
+        C_pool_numerator = np.zeros((len(features_to_plot), len(features_to_plot)), dtype=float)
+        C_pool_denominator = 0
+        D = pd.DataFrame(np.zeros([len(labels), len(labels)]), index=labels, columns=labels, dtype=float)  # Mahalanobis distance matrix includes all labels/classes in the dataset.
+
+        for cls_pair in class_pairs:
+            centroids = {}
+
+            for each_class in cls_pair:
+                Xk = X[y== each_class]  # get all features for the correct classes only
+                centroids[each_class] = Xk.mean(axis=0)  # centroid of each feature (i.e., mean) for each class captured here.
+
+                n = Xk.shape[0]  # number of samples in the class
+                Ck = np.cov(Xk, rowvar=False, ddof=1)  # within-class covariance matrix
+                # Let's computer pool terms
+                C_pool_numerator += (n - 1) * Ck  # Building the numerator term
+                C_pool_denominator += (n - 1)  # Building the denominator term (i.e. the sum of degrees of freedom based on number of samples in each class)
+        
+            # Compute the pooled covariance matrix
+            C_pooled = C_pool_numerator / C_pool_denominator
+
+            # Apply shrinkage to the pooled covariance matrix
+            # Shrinkage is applied to the diagonal elements of the pooled covariance matrix to improve numerical stability.
+            # For better representation, shrinkage will also be scaled by the average variance of the features in the pooled covariance matrix.
+            sum_of_diagonal_elements = np.trace(C_pooled)
+            average_variance = sum_of_diagonal_elements / C_pooled.shape[0]
+
+            if np.isfinite(sum_of_diagonal_elements) and sum_of_diagonal_elements > 0:
+                # sum of variances is not np.nan, np.inf, -np.inf AND is positive
+                boost_factor = shrinkage * average_variance  # Scale the original small shrinkage factor by the average of variances for better representation of data.
+            else:
+                boost_factor = shrinkage    # Do not scale the original small shrinkage factor by the average of variances.
+
+            C_pooled = C_pooled + boost_factor * np.eye(C_pooled.shape[0])  # boost the diagonal elements of the pooled covariance matrix
+
+            # Use pseudo-inverse for robustness
+            C_pooled_inv = np.linalg.pinv(C_pooled)  # Taking the inverse of the covariance matrix.
+
+            # Calculate Mahalanobis distance for cls_pair
+            centroid_delta = centroids[cls_pair[0]] - centroids[cls_pair[1]]  # difference between the centroids of the two classes
+
+            D.loc[cls_pair[0], cls_pair[1]] = float(np.sqrt(centroid_delta.T @ C_pooled_inv @ centroid_delta))  # Mahalanobis distance between the two classes
+            # Also populate the reverse direction of the distance in the D matrix for consistency (diagonal elements are 0)
+            D.loc[cls_pair[1], cls_pair[0]] = D.loc[cls_pair[0], cls_pair[1]]  # Mahalanobis distance is symmetric and the distance between cls_pair[1] and cls_pair[0] is the same as the distance between cls_pair[0] and cls_pair[1]  
+
+        # Print the results in a nice table format.
+        print(f"Mahalanobis distance matrix for features: {features_to_plot}:")
+        prt.print_dataframe(D, justify_numeric="center")   # Print all Mahalanobis distances between all pairs of classes in the dataset as a nice table.
+
+        # Update pdf report content
+        self.reportObj.open_new_page(page_title="MAHALANOBIS DISTANCE MATRIX")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.print_dataframe_as_table(D)
 
 
     def _kde_plot_analysis(self, features_dict: dict, class_column: str, save_folder: str, display_feature_thresholds: bool = True, display_plots: bool = False):
@@ -501,8 +710,7 @@ class DataInsights:
                 # Save the plot if filepath is provided
                 if save_folder is not None:
                     filename = f'confusion_risk_KDE_{each_feature}_{each_pair[0]}_vs_{each_pair[1]}.png'
-                    pdf_report_title = "CONFUSION RISK - KDE PLOT"
-                    self._save_plot(figure=fig, filename=filename, save_folder=save_folder, pdf_report_title=pdf_report_title)
+                    self._save_plot(figure=fig, filename=filename, save_folder=save_folder, pdf_page_title="CONFUSION RISK - KDE PLOT")
 
                 if display_plots == True:
                     # Enable interactive mode for non-blocking display
@@ -552,8 +760,7 @@ class DataInsights:
                     # Save the plot if filepath is provided
                     if save_folder is not None:
                         filename = f'confusion_risk_SCATTER_{x_col}_vs_{y_col}.png'
-                        pdf_report_title = "CONFUSION RISK - SCATTER PLOT"
-                        self._save_plot(figure=fig, filename=filename, save_folder=save_folder, pdf_report_title=pdf_report_title)
+                        self._save_plot(figure=fig, filename=filename, save_folder=save_folder, pdf_page_title="CONFUSION RISK - SCATTER PLOT")
 
                     if display_plots == True:
                         # Enable interactive mode for non-blocking display
@@ -564,7 +771,7 @@ class DataInsights:
                 # else skip the plot to avoid duplication
 
 
-    def _save_plot(self, figure: plt.figure, filename: str, save_folder: str, pdf_report_title: str = None):
+    def _save_plot(self, figure: plt.figure, filename: str, save_folder: str, pdf_page_title: str = None):
                             # Save the plot if filepath is provided
         save_path = Path(save_folder)  / filename
         # Create directory if it doesn't exist
@@ -573,10 +780,9 @@ class DataInsights:
         figure.savefig(str(save_path), dpi=300, bbox_inches='tight')
         print(f"\nPlot saved to: {save_path}")
 
-        if pdf_report_title != None:
+        if pdf_page_title != None:
             # Add the saved plot filepath to the report
-            self.reportObj.new_page() # A new page for current analysis output
-            self.reportObj.print(rprt.ReportDataType.HEADING_2, pdf_report_title)
+            self.reportObj.open_new_page(page_title=pdf_page_title)
             self.reportObj.print_image(save_path)
     
 
