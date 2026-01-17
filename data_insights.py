@@ -3,7 +3,7 @@ from typing import Any
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
+from scipy.stats import gaussian_kde, norm
 from pathlib import Path
 from utils import printing as prt
 from utils import reportify as rprt
@@ -538,7 +538,59 @@ class DataInsights:
         # We will get one distance per class pair.
         # The calculated distances between pairs of classes will also be comparable.
         # The distance will reflect the signal vs noise, not class size or regime frequency.
-        self._mahalanobis_distance_analysis(features_dict, class_column, save_folder, display_plots=display_plots)
+        distance_matrix_df = self._mahalanobis_distance_analysis(features_dict, class_column, save_folder, display_plots=display_plots)
+
+        # Once we calculate the Mahalanobis distance matrix using the pooled covariance matrix,
+        # we can use it to calculate the expected pairwise separability accuracy of classes under the following assumptions:
+        # 1 - Each class has a normal distribution in the feature space. (still holds as an approximation in mild skewness and kurtosis of features)
+        # 2 - All classes have the same covariance matrix and only differ in their means. (slight differences still allow an approximation)
+        # 3 - All classes are assumed equally likely. (rare classes will be underestimated in terms of accuracy)
+        # 4 - Classifier is assumed to know the true means and covariance (i.e., best classifier case) Observed accuracy may vary depending on the classifier used.
+        # 5 - Correct feature scaling and whitening is used in distance calculation (Mahalanobis distance calculation already ensures tis)
+        # 6 - Covariance is estimated using sufficient number of samples. (small sample size in classes will inject noise, which makes the distances less reliable)
+        # 7 - Because only pairwise accuracy is calculated, multiclass accuracy will be overestimated.
+        # Due to the many assumptions above, the accuraacy results should be interpreted as an upper-bound only!
+        self._calculate_pairwise_accuracy_estimations(distance_matrix_df)        
+
+
+
+    def _calculate_pairwise_accuracy_estimations(self, distance_matrix_df: pd.DataFrame):
+        """
+        Calculate the expected pairwise separability accuracy of classes under the following assumptions:
+        1 - Each class has a normal distribution in the feature space. (still holds as an approximation in mild skewness and kurtosis of features)
+        2 - All classes have the same covariance matrix and only differ in their means. (slight differences still allow an approximation)
+        3 - All classes are assumed equally likely. (rare classes will be underestimated in terms of accuracy)
+        4 - Classifier is assumed to know the true means and covariance (i.e., best classifier case) Observed accuracy may vary depending on the classifier used.
+        5 - Correct feature scaling and whitening is used in distance calculation (Mahalanobis distance calculation already ensures tis)
+        6 - Covariance is estimated using sufficient number of samples. (small sample size in classes will inject noise, which makes the distances less reliable)
+        7 - Because only pairwise accuracy is calculated, multiclass accuracy will be overestimated.
+        Due to the many assumptions above, the accuraacy results should be interpreted as an upper-bound only!
+
+        Args:
+            distance_matrix_df: DataFrame containing the Mahalanobis distance matrix
+
+        Returns:
+            None
+        """
+
+        labels = list(distance_matrix_df.columns)  # index is the same as the matrix is square and symmetric
+
+        accuracy_matrix = pd.DataFrame(norm.cdf(distance_matrix_df / 2.0), index=labels, columns=labels)  # gives the probability of successfully separating a class on the row from a class on the column
+
+        # Let's initialize the diagonal to 1.0 to indicate perfect accuracy for each class to itself
+        for i in range(len(labels)):
+            accuracy_matrix.iloc[i, i] = 1.0
+
+        # Round probabilities to 3 decimal points
+        accuracy_matrix = accuracy_matrix.round(3)
+
+        # Print the results in a nice table format.
+        print(f"Pairwise separability accuracy estimations:")
+        prt.print_dataframe(accuracy_matrix, justify_numeric="center")   # Print the pairwise separability accuracy estimations as a nice table.
+
+        # Add result to the pdf report file too
+        self.reportObj.open_new_page(page_title="PAIRWISE SEPARABILITY ACCURACY ESTIMATIONS")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.print_dataframe_as_table(accuracy_matrix)
 
 
     def _mahalanobis_distance_analysis(self, features_dict: dict, 
@@ -547,7 +599,7 @@ class DataInsights:
     display_plots: bool = False,
     standardize: bool = True,
     shrinkage: float = 1e-3,   # diagonal regularization for numerical stability prior to matrix inversion
-    ):
+    ) -> pd.DataFrame:
         """
         Calculate the Mahalanobis distance between each pair of classes for the selected features in the feature space.
         Mahalanobis distance analysis to see the level of overlap in the feature space.
@@ -646,6 +698,8 @@ class DataInsights:
         # Update pdf report content
         self.reportObj.open_new_page(page_title="MAHALANOBIS DISTANCE MATRIX")  # Add an empty page in the pdf report, and add the page title to the page.
         self.reportObj.print_dataframe_as_table(D)
+
+        return D
 
 
     def _kde_plot_analysis(self, features_dict: dict, class_column: str, save_folder: str, display_feature_thresholds: bool = True, display_plots: bool = False):
