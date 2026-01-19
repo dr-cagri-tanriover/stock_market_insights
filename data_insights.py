@@ -66,7 +66,7 @@ class DataInsights:
         """
             Display basic information about the dataframe self.df
         """
-        self.reportObj.new_page(title=self.pdf_report_title)  # Start a new page in the pdf report created. Also add the report title here.
+        self.reportObj.new_page(title=self.pdf_report_title, enable_write=True)  # Start a new page in the pdf report created. Also add the report title here.
 
         self.reportObj.print(rprt.ReportDataType.HEADING_2, "BASIC DATAFRAME INFORMATION")  # Add a page title for the basic information section.
 
@@ -120,7 +120,7 @@ class DataInsights:
         categorical_columns = self.df.select_dtypes(include=["object"]).columns.tolist()
         datetime_columns = self.df.select_dtypes(include=["datetime", "datetime64"]).columns.tolist()
 
-        self.reportObj.open_new_page(page_title="DATA TYPES SUMMARY")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.open_new_page(page_title="DATA TYPES SUMMARY", enable_write=True)  # Add an empty page in the pdf report, and add the page title to the page.
 
         if len(numeric_columns) > 0:
             message = f"Found {len(numeric_columns)} numeric columns in dataset:"
@@ -173,7 +173,7 @@ class DataInsights:
         
         numeric_data_exists = lambda df: True if  len(df.select_dtypes(include=['number']).columns.tolist()) > 0 else False
 
-        self.reportObj.open_new_page(page_title="NUMERIC COLUMNS STATISTICS")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.open_new_page(page_title="NUMERIC COLUMNS STATISTICS", enable_write=True)  # Add an empty page in the pdf report, and add the page title to the page.
 
         if numeric_data_exists(self.df):
             summary = self.df.describe(include='number')  # general statistics in summary data frame
@@ -294,7 +294,7 @@ class DataInsights:
             fig.savefig(str(save_path), dpi=300, bbox_inches='tight')
             print(f"\nPlot saved to: {save_path}")
             # Add the saved plot filepath to the report
-            self.reportObj.open_new_page(page_title="NUMERIC COLUMNS DISTRIBUTION PLOTS")  # Add an empty page in the pdf report, and add the page title to the page.
+            self.reportObj.open_new_page(page_title="NUMERIC COLUMNS DISTRIBUTION PLOTS", enable_write=True)  # Add an empty page in the pdf report, and add the page title to the page.
             self.reportObj.print_image(save_path)
         
         if display_plots == True:
@@ -314,7 +314,7 @@ class DataInsights:
 
         categorical_columns_list = self.df.select_dtypes(include=['object']).columns.to_list()
 
-        self.reportObj.open_new_page(page_title="CATEGORICAL COLUMNS STATISTICS")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.open_new_page(page_title="CATEGORICAL COLUMNS STATISTICS", enable_write=True)  # Add an empty page in the pdf report, and add the page title to the page.
 
         if len(categorical_columns_list):
             # There are categorical columns
@@ -380,7 +380,7 @@ class DataInsights:
             print("No categorical data found in dataset...")
             return
 
-        self.reportObj.open_new_page(page_title="NUMERICAL STATISTICS FOR CATEGORICAL COLUMNS")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.open_new_page(page_title="NUMERICAL STATISTICS FOR CATEGORICAL COLUMNS", enable_write=True)  # Add an empty page in the pdf report, and add the page title to the page.
 
         for each_category in categorical_columns:
             ##print(f"Generating descriptive statistics for [{each_category}] categorical column:")
@@ -416,7 +416,7 @@ class DataInsights:
         
         numeric_columns = self.df.select_dtypes(include=["number"]).columns.tolist()
         
-        self.reportObj.open_new_page(page_title="CORRELATION ANALYSIS (for numerical columns only)")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.open_new_page(page_title="CORRELATION ANALYSIS (for numerical columns only)", enable_write=True)  # Add an empty page in the pdf report, and add the page title to the page.
 
         if len(numeric_columns) == 0:
             #print("No numerical data found in dataset...")
@@ -522,14 +522,14 @@ class DataInsights:
         
         # Method 1 - Scatter plots for each pair of features to see if there is any overlap in the feature space.
         # This method shows joint geometry of the features in the feature space.
-        self._scatter_plot_analysis(features_dict, class_column, save_folder, display_plots)
+        self._scatter_plot_analysis(features_dict, class_column, save_folder, display_plots, enable_pdf_write=True)
 
         # Method 2 - Kernel Density Estimation (KDE) for each feature to see if there is any overlap in the feature space.
         # This method complements Method 1 and shows:
         #- Marginal separability of the features
         # - where thresholds cut through probability mass
         # - which classes dominate specific value ranges
-        self._kde_plot_analysis(features_dict, class_column, save_folder, display_feature_thresholds=True, display_plots=display_plots)
+        self._kde_plot_analysis(features_dict, class_column, save_folder, display_feature_thresholds=True, display_plots=display_plots, enable_pdf_write=True)
 
         # Method 3 - Mahalanobis distance analysis to see the level of overlap in the feature space.
         # This will tell us how separable the classes are in feature space, before training a model.
@@ -538,7 +538,7 @@ class DataInsights:
         # We will get one distance per class pair.
         # The calculated distances between pairs of classes will also be comparable.
         # The distance will reflect the signal vs noise, not class size or regime frequency.
-        distance_matrix_df = self._mahalanobis_distance_analysis(features_dict, class_column, save_folder, display_plots=display_plots)
+        distance_matrix_df = self._mahalanobis_distance_analysis(features_dict, class_column, save_folder, display_plots=display_plots, enable_pdf_write=True)
 
         # Once we calculate the Mahalanobis distance matrix using the pooled covariance matrix,
         # we can use it to calculate the expected pairwise separability accuracy of classes under the following assumptions:
@@ -550,11 +550,11 @@ class DataInsights:
         # 6 - Covariance is estimated using sufficient number of samples. (small sample size in classes will inject noise, which makes the distances less reliable)
         # 7 - Because only pairwise accuracy is calculated, multiclass accuracy will be overestimated.
         # Due to the many assumptions above, the accuraacy results should be interpreted as an upper-bound only!
-        self._calculate_pairwise_accuracy_estimations(distance_matrix_df)        
+        self._calculate_pairwise_accuracy_estimations(distance_matrix_df, enable_pdf_write=True)        
 
 
 
-    def _calculate_pairwise_accuracy_estimations(self, distance_matrix_df: pd.DataFrame):
+    def _calculate_pairwise_accuracy_estimations(self, distance_matrix_df: pd.DataFrame, enable_pdf_write: bool = True):
         """
         Calculate the expected pairwise separability accuracy of classes under the following assumptions:
         1 - Each class has a normal distribution in the feature space. (still holds as an approximation in mild skewness and kurtosis of features)
@@ -589,7 +589,7 @@ class DataInsights:
         prt.print_dataframe(accuracy_matrix, justify_numeric="center")   # Print the pairwise separability accuracy estimations as a nice table.
 
         # Add result to the pdf report file too
-        self.reportObj.open_new_page(page_title="PAIRWISE SEPARABILITY ACCURACY ESTIMATIONS")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.open_new_page(page_title="PAIRWISE SEPARABILITY ACCURACY ESTIMATIONS", enable_write=enable_pdf_write)  # Add an empty page in the pdf report, and add the page title to the page.
         self.reportObj.print_dataframe_as_table(accuracy_matrix)
 
 
@@ -599,6 +599,7 @@ class DataInsights:
     display_plots: bool = False,
     standardize: bool = True,
     shrinkage: float = 1e-3,   # diagonal regularization for numerical stability prior to matrix inversion
+    enable_pdf_write: bool = True
     ) -> pd.DataFrame:
         """
         Calculate the Mahalanobis distance between each pair of classes for the selected features in the feature space.
@@ -696,13 +697,19 @@ class DataInsights:
         prt.print_dataframe(D, justify_numeric="center")   # Print all Mahalanobis distances between all pairs of classes in the dataset as a nice table.
 
         # Update pdf report content
-        self.reportObj.open_new_page(page_title="MAHALANOBIS DISTANCE MATRIX")  # Add an empty page in the pdf report, and add the page title to the page.
+        self.reportObj.open_new_page(page_title="MAHALANOBIS DISTANCE MATRIX", enable_write=enable_pdf_write)  # Add an empty page in the pdf report, and add the page title to the page.
         self.reportObj.print_dataframe_as_table(D)
 
         return D
 
 
-    def _kde_plot_analysis(self, features_dict: dict, class_column: str, save_folder: str, display_feature_thresholds: bool = True, display_plots: bool = False):
+    def _kde_plot_analysis(self, features_dict: dict,
+                            class_column: str,
+                            save_folder: str,
+                            display_feature_thresholds: bool = True,
+                            display_plots: bool = False,
+                            enable_pdf_write: bool = True
+                        ):
         """
         Plot the Kernel Density Estimation (KDE) for each feature to see if there is any overlap in the feature space.
         This method complements Method 1 and shows:
@@ -764,7 +771,11 @@ class DataInsights:
                 # Save the plot if filepath is provided
                 if save_folder is not None:
                     filename = f'confusion_risk_KDE_{each_feature}_{each_pair[0]}_vs_{each_pair[1]}.png'
-                    self._save_plot(figure=fig, filename=filename, save_folder=save_folder, pdf_page_title="CONFUSION RISK - KDE PLOT")
+                    self._save_plot(figure=fig,
+                                    filename=filename,save_folder=save_folder,
+                                    pdf_page_title="CONFUSION RISK - KDE PLOT",
+                                    enable_pdf_write=enable_pdf_write
+                                    )
 
                 if display_plots == True:
                     # Enable interactive mode for non-blocking display
@@ -773,7 +784,7 @@ class DataInsights:
                     print(f"Confusion risk KDE plot displayed for {each_feature}: {each_pair[0]} vs {each_pair[1]}")            
 
 
-    def _scatter_plot_analysis(self, features_dict: dict, class_column: str, save_folder: str, display_plots: bool):
+    def _scatter_plot_analysis(self, features_dict: dict, class_column: str, save_folder: str, display_plots: bool, enable_pdf_write: bool = True):
         """
         Scatter plots for each pair of features to see if there is any overlap in the feature space.
         This method shows joint geometry of the features in the feature space.
@@ -814,7 +825,12 @@ class DataInsights:
                     # Save the plot if filepath is provided
                     if save_folder is not None:
                         filename = f'confusion_risk_SCATTER_{x_col}_vs_{y_col}.png'
-                        self._save_plot(figure=fig, filename=filename, save_folder=save_folder, pdf_page_title="CONFUSION RISK - SCATTER PLOT")
+                        self._save_plot(figure=fig,
+                                        filename=filename,
+                                        save_folder=save_folder,
+                                        pdf_page_title="CONFUSION RISK - SCATTER PLOT",
+                                        enable_pdf_write=enable_pdf_write
+                                        )
 
                     if display_plots == True:
                         # Enable interactive mode for non-blocking display
@@ -825,7 +841,7 @@ class DataInsights:
                 # else skip the plot to avoid duplication
 
 
-    def _save_plot(self, figure: plt.figure, filename: str, save_folder: str, pdf_page_title: str = None):
+    def _save_plot(self, figure: plt.figure, filename: str, save_folder: str, pdf_page_title: str = None, enable_pdf_write: bool = True):
                             # Save the plot if filepath is provided
         save_path = Path(save_folder)  / filename
         # Create directory if it doesn't exist
@@ -836,7 +852,7 @@ class DataInsights:
 
         if pdf_page_title != None:
             # Add the saved plot filepath to the report
-            self.reportObj.open_new_page(page_title=pdf_page_title)
+            self.reportObj.open_new_page(page_title=pdf_page_title, enable_write=enable_pdf_write)
             self.reportObj.print_image(save_path)
     
 

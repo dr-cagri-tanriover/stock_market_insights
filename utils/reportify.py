@@ -73,6 +73,7 @@ class reporter():
         self.author = author
         self.title = title
         self.subject = subject
+        self.write_enabled = True  # This flag is used to control what gets written to a pdf report in progress.
 
     def get_style(self, style_type: ReportDataType):
         
@@ -171,25 +172,31 @@ class reporter():
         # canvas.setKeywords("keywords, here")
         # canvas.setCreator("Your Application Name")
 
-    def open_new_page(self, page_title: str):
+    def open_new_page(self, page_title: str, enable_write=True):
         """
         Create a new empty page in the report and add a page title to it.
         """
-        self.new_page() # A new page
-        self.print(ReportDataType.HEADING_2, page_title)
+        self.write_enabled = enable_write
+
+        if self.write_enabled:
+            self.new_page() # A new page
+            self.print(ReportDataType.HEADING_2, page_title)
 
 
-    def new_page(self, title: str = None):
+    def new_page(self, title: str = None, enable_write=True):
         """
         Add a new page to the report.
         """
 
-        self.indices.page_index += 1
-        self.indices.field_index = 0
-        self.report_dict[self.indices.page_index] = {}  # each page index will have a dictionary as value
+        self.write_enabled = enable_write
 
-        if title is not None:
-            self.print(ReportDataType.TITLE, title)
+        if self.write_enabled:
+            self.indices.page_index += 1
+            self.indices.field_index = 0
+            self.report_dict[self.indices.page_index] = {}  # each page index will have a dictionary as value
+
+            if title is not None:
+                self.print(ReportDataType.TITLE, title)
 
     def add_table_data(self, table_LoL: List[List[Any]]):
         """
@@ -222,23 +229,23 @@ class reporter():
         Args:
             dataframe: Pandas dataframe to print as a table
         """
+        if self.write_enabled:
+            # Format numbers to 2 decimal places before converting to string
+            df_formatted = df.round(3)  # Float precision of 3 decimal places
+            LoL = df_formatted.astype(str).values.tolist()  # Only gets the cell values as strings. No row or column names
 
-        # Format numbers to 2 decimal places before converting to string
-        df_formatted = df.round(3)  # Float precision of 3 decimal places
-        LoL = df_formatted.astype(str).values.tolist()  # Only gets the cell values as strings. No row or column names
+            row_names = df_formatted.astype(str).index.tolist()
+            col_names = df_formatted.astype(str).columns.tolist()
+            col_names.insert(0, " ")  # Add a space character to row and column intersection cell
 
-        row_names = df_formatted.astype(str).index.tolist()
-        col_names = df_formatted.astype(str).columns.tolist()
-        col_names.insert(0, " ")  # Add a space character to row and column intersection cell
+            for idx, row_name in enumerate(row_names):
+                LoL[idx].insert(0, row_name)
+            
+            # As the final step, insert the col_names into LoL as the first list entry
+            LoL.insert(0, col_names)
 
-        for idx, row_name in enumerate(row_names):
-            LoL[idx].insert(0, row_name)
-        
-        # As the final step, insert the col_names into LoL as the first list entry
-        LoL.insert(0, col_names)
-
-        # Then add the table to the ongoing report content list
-        self.add_table_data(LoL)
+            # Then add the table to the ongoing report content list
+            self.add_table_data(LoL)
 
 
 
@@ -246,10 +253,10 @@ class reporter():
         """
         Add an image section to the report. Each string value in image_dict will be a path to an image file.
         """
-
-        self.indices.field_index += 1  # Data will be added to a new field.
-        new_key = f"{ReportDataType.IMAGE}_{self.indices.field_index}"
-        self.report_dict[self.indices.page_index][new_key] = image_filepath
+        if self.write_enabled:
+            self.indices.field_index += 1  # Data will be added to a new field.
+            new_key = f"{ReportDataType.IMAGE}_{self.indices.field_index}"
+            self.report_dict[self.indices.page_index][new_key] = image_filepath
 
     def print(self, data_type: ReportDataType, string_data: str):
         """
@@ -258,9 +265,10 @@ class reporter():
         
         print(string_data)
 
-        self.indices.field_index += 1  # Data will be added to a new field.
-        new_key = f"{data_type}_{self.indices.field_index}"
-        self.report_dict[self.indices.page_index][new_key] = string_data
+        if self.write_enabled:
+            self.indices.field_index += 1  # Data will be added to a new field.
+            new_key = f"{data_type}_{self.indices.field_index}"
+            self.report_dict[self.indices.page_index][new_key] = string_data
 
     def generate_report(self):
 
