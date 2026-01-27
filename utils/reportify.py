@@ -263,7 +263,7 @@ class reporter():
         Print the user requested text type to the console as well as the pdf report
         """
         
-        print(string_data)
+        #print(string_data)
 
         if self.write_enabled:
             self.indices.field_index += 1  # Data will be added to a new field.

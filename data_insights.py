@@ -1,4 +1,5 @@
 from typing import Any
+from datetime import datetime
 
 import pandas as pd
 import numpy as np
@@ -704,12 +705,12 @@ class DataInsights:
 
 
     def _kde_plot_analysis(self, features_dict: dict,
-                            class_column: str,
-                            save_folder: str,
-                            display_feature_thresholds: bool = True,
-                            display_plots: bool = False,
-                            enable_pdf_write: bool = True
-                        ):
+        class_column: str,
+        save_folder: str,
+        display_feature_thresholds: bool = True,
+        display_plots: bool = False,
+        enable_pdf_write: bool = True
+    ):
         """
         Plot the Kernel Density Estimation (KDE) for each feature to see if there is any overlap in the feature space.
         This method complements Method 1 and shows:
@@ -855,6 +856,309 @@ class DataInsights:
             self.reportObj.open_new_page(page_title=pdf_page_title, enable_write=enable_pdf_write)
             self.reportObj.print_image(save_path)
     
+
+    def temporal_stability_analysis(self, temporal_stability_params: dict, class_column='gt', save_folder="plots"):
+        """
+        Temporal stability analysis is a technique to analyze the stability of a time series over time.
+        This analysis involves time drift, and frequency drift.
+
+        Args:
+            temporal_stability_params: Dictionary containing the parameters for the temporal stability analysis.
+            class_column: Name of the column containing the class labels
+            save_folder: Folder to save the plots
+        """
+
+        temporal_stability_params['annual_time_step'] = int(temporal_stability_params['annual_time_step'])
+
+        annual_time_step = temporal_stability_params['annual_time_step']
+        #sliding_window_size_months = temporal_stability_params['sliding_months']   # For future use
+
+        temporalDf = self.df.copy()
+
+        # Convert 'end_date' column to datetime
+        # If the column contains integers in YYYYMMDD format
+        if 'end_date' in temporalDf.columns:
+            temporalDf['end_date'] = pd.to_datetime(temporalDf['end_date'].astype(str), format='%Y%m%d')
+
+        # Create a new column in temporalDf called 'era' which will contain the era of the dataset
+        # e.g. if annual_time_step = 1 then eras between 2014 and 2024: "2014-2014", "2015-2015", ..., "2024-2024"
+        # e.g. if annual_time_step = 2 then eras between 2014 and 2024: "2014-2015", "2016-2017", ..., "2023-2024" etc.
+
+        min_year, max_year = np.min(temporalDf['end_date']).year, np.max(temporalDf['end_date']).year
+        
+        # Call the _assign_era() method to assign the era to each row based on the year in 'end_date' and annual_time_step.
+        temporalDf['era'] = temporalDf['end_date'].apply(self._assign_era, annual_time_step=annual_time_step, min_year=min_year, max_year=max_year)  # static arguments need to be passed AFTER the end_date argument.
+
+        # ANALYSIS 1 - Class frequency drift over eras.
+        # Goal: Answer the following question: Does the proportion of each class (OSCILLATING, OTHER, TREND_UP, STATIONARY, TREND_DOWN)
+        # remain stable across eras, or does it change materially over time?
+        # This is to measure data composition stability to flag any issues before building a model.
+        # We just need the 'end_date', 'era' and 'gt' columns for this analysis.
+        freqDriftDf = self._class_frequency_drift_analysis(temporalDf, class_column, save_folder=save_folder, display_plots=False, enable_pdf_write=True)
+
+        # ANALYSIS 2 - Feature drift over eras.
+        # Goal: Answer the following question: Does the distribution of each/any of the features change materially over time.
+        # This analysis does not provide an answer to 'why' it changes or whetehr it is likely to hurt the modeling. We are seeking
+        # whether there is a change and how.
+        features_to_analyze = ['volatility', 'slope', 'zcr', 'trend_strength']
+        statistics_to_use = ['count', '10th_prcntl', 'median', '90th_prcntl']
+        baseline_years = [2014, 2015, 2016, 2017, 2018, 2019]  # these are the pre-covid years in the dataset (in ascending order!) to use as baseline for feature drift analysis
+        self._feature_drift_analysis(
+                                        temporalDf, 
+                                        features_to_analyze, 
+                                        statistics_to_use,
+                                        baseline_years,
+                                        class_column, 
+                                        save_folder=save_folder, 
+                                        display_plots=False, 
+                                        enable_pdf_write=True
+                                    )
+
+
+    def _feature_drift_analysis(self, temporalDf: pd.DataFrame,
+    features_to_analyze: list[str],
+    statistics_to_use: list[str],
+    baseline_years: list[int],
+    class_column: str,
+    save_folder: str, display_plots: bool, enable_pdf_write: bool):
+        """
+        ANALYSIS 2 - Feature drift over eras.
+        Goal: Answer the following question: Does the distribution of each/any of the features change materially over time.
+        This analysis does not provide an answer to 'why' it changes or whether it is likely to hurt the modeling. We are seeking
+        whether there is a change and how.
+        """
+
+        # Check temporalDf to make sure there are no NaNs, -inf or + inf values in the features to analyze
+        for each_feature in features_to_analyze:
+            if temporalDf[each_feature].isnull().any() or temporalDf[each_feature].isin([-np.inf, np.inf]).any():
+                raise ValueError(f"Error: {each_feature} contains NaNs, -inf or + inf values")
+
+        # Process one feature per loop iteration
+        for each_feature in features_to_analyze:
+            
+            eras = temporalDf['era'].sort_index(ascending=True).unique()
+            resDf = pd.DataFrame(index=eras,columns=statistics_to_use)
+            
+            for each_era in resDf.index:
+                
+                featSeries = temporalDf[temporalDf['era']==each_era][each_feature]
+
+                for each_statistic in statistics_to_use:
+                    if each_statistic == 'count':
+                        resDf.loc[each_era, each_statistic] = featSeries.shape[0]
+                    elif each_statistic == '10th_prcntl':
+                        resDf.loc[each_era, each_statistic] = featSeries.quantile(0.1).round(4)
+                    elif each_statistic == 'median':
+                        resDf.loc[each_era, each_statistic] = featSeries.median().round(4)
+                    elif each_statistic == '90th_prcntl':
+                        resDf.loc[each_era, each_statistic] = featSeries.quantile(0.9).round(4)
+                    else:
+                        raise ValueError(f"Error: {each_statistic} is not a valid statistic")
+
+
+            # Generate a plot to make it easier to spot any feature drift over eras
+            baseline_median = self._compute_baseline_median(resDf, baseline_years)  # helper function to compute the median of the baseline years
+            self._feature_drift_plot_analysis(resDf, each_feature, baseline_median, save_folder, display_plots, enable_pdf_write)
+
+            # Update pdf report content
+            print(f"Temporal analysis - feature drift table for {each_feature}:")
+            prt.print_dataframe(resDf, justify_numeric="center")
+            self.reportObj.print(rprt.ReportDataType.HEADING_2, f"{each_feature} feature drift table:")
+            self.reportObj.print_dataframe_as_table(resDf)
+
+
+    def _compute_baseline_median(self, resDf: pd.DataFrame, baseline_years: list[int]) -> float:
+        """
+        Index of resDf includes the years of eras in the format 'YYYY-YYYY'. baseline_years includes each year as int in a list in ASCENDING order.
+        Therefore, we need to check the minimum and maximum year values in each era to find the baseline median.
+        """
+        baseline_median = 0.0
+        num_years = 0  # needed to calculate the mean at the end
+        
+        for each_era in resDf.index:
+            min_year, max_year= int(each_era.split('-')[0]), int(each_era.split('-')[1])
+
+            first_count = True
+            for each_year in baseline_years:
+                if each_year >= min_year and each_year <= max_year:
+                    if first_count:
+                        first_count = False
+                        baseline_median += resDf.loc[each_era, 'median']
+                        num_years += 1
+                    # else skip
+        
+        return baseline_median / num_years  # return the average median of the baseline years
+
+
+    def _feature_drift_plot_analysis(self, resDf: pd.DataFrame, current_feature: str, baseline_median: float, save_folder: str, display_plots: bool, enable_pdf_write: bool) -> None:   
+        """
+        Generate a plot to make it easier to spot any feature drift over eras
+        
+        Args:
+            resDf: DataFrame with index as eras (time axis) and columns: 'median', '10th_prcntl', '90th_prcntl'
+            current_feature: Name of the feature being analyzed
+            save_folder: Folder path to save the plot
+            display_plots: Whether to display the plot
+            enable_pdf_write: Whether to add plot to PDF report
+        """
+        # Extract data from DataFrame
+        eras = resDf.index.tolist()  # Time axis (eras)
+        median_values = resDf['median'].values.astype(float)
+        p10_values = resDf['10th_prcntl'].values.astype(float)
+        p90_values = resDf['90th_prcntl'].values.astype(float)
+        
+        # Convert eras to numeric positions for plotting
+        x_positions = range(len(eras))
+        
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Plot the shaded band (10th to 90th percentile)
+        ax.fill_between(x_positions, p10_values, p90_values, alpha=0.3, color='lightblue', label='10th-90th Percentile Band')
+        
+        # Plot the median as a solid line
+        ax.plot(x_positions, median_values, 'b-', linewidth=2, label='Median', marker='o', markersize=4)
+        
+        # Plot the baseline median as a solid line for comparison
+        ax.plot(x_positions, [baseline_median] * len(x_positions), 'r--', linewidth=1, label='baseline median')
+
+        # Formatting
+        ax.set_xlabel('Era', fontsize=12)
+        ax.set_ylabel(f'{current_feature} Value', fontsize=12)
+        ax.set_title(f'current feature: {current_feature}', fontsize=14, fontweight='bold')
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(eras, rotation=45, ha='right')
+        ax.legend(loc='upper right', fontsize=10)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        plt.tight_layout()
+        
+        # Save plot if requested
+        if enable_pdf_write and save_folder:
+            save_path = Path(save_folder) / f'{current_feature}_drift_plot.png'
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(str(save_path), dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {save_path}")
+            
+            # Add to PDF report if enabled
+            if hasattr(self, 'reportObj'):
+                self.reportObj.new_page(enable_write=enable_pdf_write)
+                self.reportObj.print(rprt.ReportDataType.HEADING_2, f"Temporal analysis - Feature Drift Plot for {current_feature}")
+                self.reportObj.print_image(save_path)
+        
+        # Display plot if requested
+        if display_plots:
+            self._enable_interactive_plots()
+        
+
+    def _class_frequency_drift_analysis(self, temporalDf: pd.DataFrame, class_column: str, save_folder: str, display_plots: bool, enable_pdf_write: bool):
+        """
+        Analysis 1 - Class frequency drift over eras.
+        Goal: Answer the following question:Does the proportion of each class (OSCILLATING, OTHER, TREND_UP, STATIONARY, TREND_DOWN)
+        remain stable across eras, or does it change materially over time?
+        This is to measure data composition stability to flag any issues before building a model.
+        We just need the 'end_date', 'era' and 'gt' columns for this analysis.        
+        """
+    
+        era_names = temporalDf['era'].unique()  # All eras in dataset
+        classes = temporalDf[class_column].unique()  # All classes in dataset
+        resDf = pd.DataFrame(columns=['era', 'class', 'proportion'])
+        #resDf['era'] = era_names  # initialize 'era' column with all eras in the dataset
+
+        for era_idx, each_era in enumerate(era_names):
+            
+            era_offset = era_idx * len(classes)     # to assign new items for a new era
+            
+            for row_idx, each_class in enumerate(classes):          
+                resDf.loc[row_idx + era_offset, 'era'] = each_era
+                resDf.loc[row_idx + era_offset, 'class'] = each_class
+                # First assignt the total count to 'proportion' column
+                resDf.loc[row_idx + era_offset, 'proportion'] = temporalDf[(temporalDf[class_column] == each_class) & (temporalDf['era'] == each_era)].shape[0]  # get count of each_class
+
+            # Get the sum of all classes in each_era and update the 'proportion' column by calculating the ratio for each class in each_era
+            sum = resDf[(resDf['era'] == each_era)]['proportion'].sum()    
+            # Use .loc to properly assign the ratio (chained indexing doesn't work for assignment)
+            resDf.loc[resDf['era'] == each_era, 'proportion'] = resDf[(resDf['era'] == each_era)]['proportion'] / sum  #resDf.loc[resDf['era'] == each_era, 'proportion'] / sum
+
+        # Time to visualize the resDf content using stacked area chart
+        freqDriftDf = self._stacked_area_chart_analysis(resDf, save_folder, display_plots, enable_pdf_write)
+
+        # Display the final table on terminal and in pdf report
+        print(f"Temporal analysis - class frequency drift table:")
+        prt.print_dataframe(freqDriftDf, justify_numeric="center")
+        # Add to the same pdf page as the plot. No new page created.
+        self.reportObj.print(rprt.ReportDataType.HEADING_2, "Temporal analysis - class frequency drift table:")
+        self.reportObj.print_dataframe_as_table(freqDriftDf)
+
+    def _stacked_area_chart_analysis(self, proportionsDf: pd.DataFrame, save_folder: str, display_plots: bool, enable_pdf_write: bool):
+        """
+        Create a stacked area chart showing class proportions over eras.
+        
+        Args:
+            proportionsDf: DataFrame with columns 'era', 'class', 'proportion'
+        """
+        # Pivot the DataFrame so each class becomes a column
+        # era becomes index, class values become columns, proportion becomes values
+        pivot_df = proportionsDf.pivot(index='era', columns='class', values='proportion')
+        
+        # Ensure proportions are numeric (convert from object/string to float if needed)
+        pivot_df = pivot_df.astype(float)
+        
+        # Sort by era to ensure proper order
+        pivot_df = pivot_df.sort_index()
+        
+        # Prepare data for stackplot
+        eras = pivot_df.index.tolist()  # era names for x-axis labels
+        class_columns = pivot_df.columns.tolist()  # class names for labels
+        proportions_by_class = [pivot_df[col].values.astype(float) for col in class_columns]  # y values, one array per class (ensure float type)
+        
+        # Convert eras to numeric positions for stackplot (stackplot requires numeric x-values)
+        x_positions = range(len(eras))
+        
+        fig = plt.figure(figsize=(12, 6))
+        plt.stackplot(x_positions, *proportions_by_class, labels=class_columns, alpha=0.7)
+        plt.title('Stacked Area Chart: Class Frequency Drift Over Eras')
+        plt.xlabel('Era')
+        plt.ylabel('Proportion')
+        plt.xticks(x_positions, eras, rotation=45, ha='right')  # Set era names as x-axis labels
+        plt.legend(title='Classes', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()  # Adjust layout to prevent label cutoff
+        #plt.show()
+
+        # Save the plot if filepath is provided
+        if save_folder is not None:
+            filename = f'temporal_class_freq_drift.png'
+            self._save_plot(figure=fig,
+                            filename=filename,
+                            save_folder=save_folder,
+                            pdf_page_title="TEMPORAL ANALYSIS - CLASS FREQUENCY DRIFT",
+                            enable_pdf_write=enable_pdf_write
+                            )
+
+        if display_plots == True:
+            # Enable interactive mode for non-blocking display
+            # Note: Figure remains open until script terminates - no plt.close() call
+            self._enable_interactive_plots()
+            print(f"Temporal analysis - class frequency drift plot displayed")
+
+        return pivot_df  # for plotting the table at the caller
+
+
+    def _assign_era(self, end_date: pd.Timestamp, annual_time_step: int, min_year: int, max_year: int) -> str:
+        year = end_date.year
+        # Calculate which era this year belongs to
+        era_start = ((year - min_year) // annual_time_step) * annual_time_step + min_year
+        era_end = era_start + annual_time_step - 1
+        if era_end > max_year:
+            era_end = max_year
+        
+        if era_start > era_end:
+            # error condition. Should never occur in a valid dataset!
+            raise ValueError(f"Error: era_start ({era_start}) is greater than era_end ({era_end})")
+            return f"0000-0000"
+
+        return f"{era_start}-{era_end}"
+
 
     def _enable_interactive_plots(self):
         plt.ion()
