@@ -87,16 +87,17 @@ def print_dataframe(
         # Add row values
         for col in display_df.columns:
             value = row[col]
-            
+            col_dtype = display_df[col].dtype  # Use column dtype: iterrows() upcasts ints to float in the row Series
+
             # Format the value based on type
             if pd.isna(value):
                 formatted_value = "[dim]NaN[/dim]"
             elif pd.api.types.is_numeric_dtype(display_df[col]):
-                # Format numbers nicely
-                if isinstance(value, float):
-                    formatted_value = f"{value:.4f}" if abs(value) < 1000 else f"{value:.2e}"
+                # Format numbers nicely; use column dtype so integers display as 1 not 1.0000
+                if pd.api.types.is_integer_dtype(col_dtype):
+                    formatted_value = str(int(value))
                 else:
-                    formatted_value = str(value)
+                    formatted_value = f"{value:.4f}" if abs(value) < 1000 else f"{value:.2e}"
             else:
                 formatted_value = str(value)
             

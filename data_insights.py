@@ -855,9 +855,302 @@ class DataInsights:
             # Add the saved plot filepath to the report
             self.reportObj.open_new_page(page_title=pdf_page_title, enable_write=enable_pdf_write)
             self.reportObj.print_image(save_path)
-    
 
-    def temporal_stability_analysis(self, temporal_stability_params: dict, class_column='gt', save_folder="plots"):
+
+    def label_noise_analysis(self, features_dict: dict = None, class_column: str = 'gt', save_folder: str = 'plots'):
+
+        # Robust sigma (scale) will be computed over the entire dataset for each feature. Then tolerance per feature will be calculated.
+        tolerances = self._compute_tolerances(features_dict)
+
+        # Generate ambiguity flags per sample in dataset
+        ambiguityFlagsDf = self._generate_ambiguity_flags(features_dict, tolerances, class_column)
+
+        # Calculate global boundary attribution for each ambiguity class
+        globalBoundaryAttributionDf = self._calculate_global_boundary_attribution(ambiguityFlagsDf, class_column)
+
+        # Calculate label boundary attribution for each ambiguity class
+        labelBoundaryAttributionDf = self._calculate_label_boundary_attribution(ambiguityFlagsDf, class_column)
+
+        # Update ambiguityFlagsDf with ambiguity metrics columns and calculate each for each row in the dataset
+        # The new ambiguityFlagsDf will only include the columns required for the rest of the analysis.
+        ambiguityFlagsDf = self._add_ambiguity_metrics(ambiguityFlagsDf, class_column)
+
+        # First calculate ambiguity metrics for the entire dataset (nothing specific per label)
+        globalMetricsDf = self._calculate_global_metrics(ambiguityFlagsDf, class_column)
+
+        # Next, repeat the same for each label.
+        labelSpecificMetricsDf = self._calculate_label_specific_metrics(ambiguityFlagsDf, class_column)
+
+        # Add the analysis results to the report and the console output
+        #####
+        self.reportObj.new_page(enable_write=True)
+        #####
+        message = "Label Noise Analysis - Global Boundary Attribution"
+        print(f"{message}")
+        prt.print_dataframe(globalBoundaryAttributionDf, justify_numeric="center")
+        self.reportObj.print(rprt.ReportDataType.HEADING_2, f"{message}")
+        self.reportObj.print_dataframe_as_table(globalBoundaryAttributionDf)
+        #####
+        message = "Label Noise Analysis - Label Boundary Attribution"
+        print(f"{message}")
+        prt.print_dataframe(labelBoundaryAttributionDf, justify_numeric="center")
+        self.reportObj.print(rprt.ReportDataType.HEADING_2, f"{message}")
+        self.reportObj.print_dataframe_as_table(labelBoundaryAttributionDf)
+        
+        #####
+        self.reportObj.new_page(enable_write=True)
+        #####
+        message = "Label Noise Analysis - Global Ambiguity Metrics"
+        print(f"{message}")
+        prt.print_dataframe(globalMetricsDf, justify_numeric="center")
+        self.reportObj.print(rprt.ReportDataType.HEADING_2, f"{message}")
+        self.reportObj.print_dataframe_as_table(globalMetricsDf)
+        #####
+        message = "Label Noise Analysis - Label Ambiguity Metrics"
+        print(f"{message}")
+        prt.print_dataframe(labelSpecificMetricsDf, justify_numeric="center")
+        self.reportObj.print(rprt.ReportDataType.HEADING_2, f"{message}")
+        self.reportObj.print_dataframe_as_table(labelSpecificMetricsDf)
+
+
+    def _calculate_label_boundary_attribution(self, ambiguityFlagsDf: pd.DataFrame, class_column: str) -> pd.DataFrame:
+        """
+        Calculate boundary attribution for a GIVEN LABEL for each flag column in the ambiguityFlagsDf dataframe as follows:
+        trigger_ratio = ratio of True values in the flag column to the total number of rows in the sub-dataframe for the GIVEN LABEL.
+
+        This provides insights on "in what fraction of a specific label sample does a particular boundary look 'close'?"
+        """
+
+        labels = list(ambiguityFlagsDf[class_column].unique())  # all unique labels in the dataset
+        boundaries = ambiguityFlagsDf.drop([class_column], axis=1).columns.tolist()  # get all columns except the class column
+
+        labelBoundaryAttributionDf = pd.DataFrame(data=[[0.0] * len(labels)], index=boundaries, columns=labels)
+
+        for each_label in labels:
+            labelDf = ambiguityFlagsDf[ambiguityFlagsDf[class_column] == each_label]  # ambiguity flagssub-dataframe for each_label entry only.
+            for each_boundary in boundaries:
+                labelBoundaryAttributionDf.loc[each_boundary, each_label] = self._get_ambiguity_rate(labelDf, each_boundary)
+
+        return labelBoundaryAttributionDf
+
+
+    def _calculate_global_boundary_attribution(self, ambiguityFlagsDf: pd.DataFrame, class_column: str) -> pd.DataFrame:
+        """
+        Calculate global boundary attribution for each flag column in the ambiguityFlagsDf dataframe as follows:
+        trigger_ratio = ratio of True values in the flag column to the total number of rows in the dataframe.
+
+        This provides insights on "in what fraction of all samples does a particular boundary look 'close'?"
+        """
+
+        boundaries = ambiguityFlagsDf.drop([class_column], axis=1).columns.tolist()  # get all columns except the class column
+
+        globalBoundaryAttributionDf = pd.DataFrame(data=[[0.0]], index=boundaries, columns=['Trigger Ratio'])
+
+        for each_boundary in boundaries:
+            globalBoundaryAttributionDf.loc[each_boundary, 'Trigger Ratio'] = self._get_ambiguity_rate(ambiguityFlagsDf, each_boundary)
+
+        return globalBoundaryAttributionDf
+
+
+    def _calculate_label_specific_metrics(self, ambiguityFlagsDf: pd.DataFrame, class_column: str) -> pd.DataFrame:
+        """
+        Following metrics will be calculated FOR EACH LABEL in the dataset:
+        1 - 'Any Ambiguity per Sample': Ratio of True values in the 'amb_any' column to the total number of rows in the dataframe.
+        2 - 'Multi Ambiguity per Sample': Ratio of True values in the 'amb_multi' column to the total number of rows in the dataframe.
+        3 - 'Mean Near-Boundary Count per Sample': Ratio of 'amb_count' column to the total number of rows in the dataframe.
+
+        The above three metrics will provide a noise floor per label basis that will indicate how much of a portion of a label's data
+        is sensitive to tiny changes.
+
+        There will be an additional column called 'Items' that give the total item count for each label for context.
+        """
+
+        labels = list(self.df[class_column].unique())  # all unique labels in the dataset
+
+        labelMetricsDf = pd.DataFrame(data=[[0.0] * 4],
+        index=labels,
+        columns=['Items', 'Any Ambiguity per Sample', 'Multi Ambiguity per Sample', 'Mean Near-Boundary Count per Sample']
+        )
+
+        labelMetricsDf['Items'] = labelMetricsDf['Items'].astype(int)   # convert the Items column to integer type for pretty printing later
+
+        for each_label in labels:
+            labelDf = ambiguityFlagsDf[ambiguityFlagsDf[class_column] == each_label]  # ambiguity flagssub-dataframe for each_label entry only.
+
+            labelMetricsDf.loc[each_label, 'Items'] = len(labelDf)
+            labelMetricsDf.loc[each_label, 'Any Ambiguity per Sample'] = self._get_ambiguity_rate(labelDf, 'amb_any')
+            labelMetricsDf.loc[each_label, 'Multi Ambiguity per Sample'] = self._get_ambiguity_rate(labelDf, 'amb_multi')
+            labelMetricsDf.loc[each_label, 'Mean Near-Boundary Count per Sample'] = self._get_ambiguity_rate(labelDf, 'amb_count')
+
+        return labelMetricsDf
+
+
+    def _calculate_global_metrics(self, ambiguityFlagsDf: pd.DataFrame, class_column: str) -> pd.DataFrame:
+        """
+        Calculate global metrics for the ambiguityFlagsDf dataframe as follows:
+        1 - 'Global Any Ambiguity per Sample': Ratio of True values in the 'amb_any' column to the total number of rows in the dataframe.
+        2 - 'Global Multi Ambiguity per Sample': Ratio of True values in the 'amb_multi' column to the total number of rows in the dataframe.
+        3 - 'Mean Near-Boundary Count per Sample': Ratio of 'amb_count' column to the total number of rows in the dataframe.
+
+        The above three metrics will provide a noise floor that will indicate how much of the entire dataset is sensitive to tiny changes.
+
+        Args:
+            ambiguityFlagsDf: DataFrame containing the ambiguity flags
+            class_column: Name of the column containing the class labels
+
+        Returns:
+            DataFrame containing the global metrics
+        """
+        globalMetricsDf = pd.DataFrame(data=[[0.0] * 3],columns=['Global Any Ambiguity per Sample', 'Global Multi Ambiguity per Sample', 'Mean Near-Boundary Count per Sample'])
+        
+        globalMetricsDf['Global Any Ambiguity per Sample'] = self._get_ambiguity_rate(ambiguityFlagsDf, 'amb_any')
+        globalMetricsDf['Global Multi Ambiguity per Sample'] = self._get_ambiguity_rate(ambiguityFlagsDf, 'amb_multi')
+        globalMetricsDf['Mean Near-Boundary Count per Sample'] = self._get_ambiguity_rate(ambiguityFlagsDf, 'amb_count')
+
+        return globalMetricsDf
+
+    def _get_ambiguity_rate(self, metricsDf: pd.DataFrame, column: str) -> float:
+
+        if metricsDf[column].dtype == bool:
+            return (metricsDf[column]==True).sum() / len(metricsDf)
+        elif metricsDf[column].dtype == int:
+            return metricsDf[column].mean()
+        else:
+            raise ValueError(f"Column {column} has an invalid data type: {metricsDf[column].dtype}")
+
+
+
+    def _add_ambiguity_metrics(self, ambiguityFlagsDf: pd.DataFrame, class_column: str) -> pd.DataFrame:
+        """
+        Add ambiguity metrics columns to the ambiguityFlagsDf dataframe as follows:
+        1 - 'amb_count': Number of ambiguity flags = True for each row (type: int)
+        2 - 'amb_any': Whether any ambiguity flag is True for each row (type: bool)
+        3 - 'amb_multi': Whether at least 2 ambiguity flags are True for each row (type: bool)
+        """
+
+        flags = ambiguityFlagsDf.drop([class_column], axis=1).columns.tolist()  # get all columns except the class column
+
+        ambiguityFlagsDf['amb_count'] = (ambiguityFlagsDf==True).sum(axis=1)  # count number of True values for each row
+        # CAUTION: We added a new column 'amb_count' to the dataframe we are processing !! Hence using flags to filter here on.
+        ambiguityFlagsDf['amb_any'] = (ambiguityFlagsDf[flags]==True).any(axis=1)  # check if at least 1 True value exists in each row
+        ambiguityFlagsDf['amb_multi'] = ambiguityFlagsDf['amb_count'] > 1  # check if at least 2 True values exist in each row (use amb_count so amb_any is not counted)
+        
+        # Finally, drop the flags column from the dataframe as they will no longer be needed.
+        ambiguityFlagsDf = ambiguityFlagsDf.drop(flags, axis=1)
+
+        return ambiguityFlagsDf
+
+
+    def _generate_ambiguity_flags(self, features_dict: dict, tolerances: dict, class_column: str) -> pd.DataFrame:
+
+        # Fixed thresholds used to calculate the labels in the dataset we are analysing
+        up_th = features_dict['slope']['thresholds'][0][1]    #'upward_th'
+        down_th = features_dict['slope']['thresholds'][1][1]  #'downward_th'
+        flat_lo = features_dict['slope']['thresholds'][2][1]  #'flatness_lo'
+        flat_hi = features_dict['slope']['thresholds'][3][1]  #'flatness_hi'
+        ts_th = features_dict['trend_strength']['thresholds'][0][1]  #'strength_th'
+        zcr_th = features_dict['zcr']['thresholds'][0][1]#'hi_osc_th' 
+        v_hi = features_dict['volatility']['thresholds'][0][1]   #'hi_noise_th'
+        v_lo = features_dict['volatility']['thresholds'][1][1]  #'lo_vol_th'
+
+        # Defining one flag per threshold in the features_dict
+        flags = ['amb_up', 'amb_down', 'amb_flat_lo', 'amb_flat_hi', 'amb_ts', 'amb_zcr', 'amb_v_hi', 'amb_v_lo']
+
+        ambiguityFlagsDf = pd.DataFrame()
+        ambiguityFlagsDf[class_column] = self.df[class_column]  # added the label column to the dataframe
+
+        for each_col in flags:
+            ambiguityFlagsDf[each_col] = False  # Add new columns filled with False by default
+
+        # Process one data set row per loop iteration
+        for each_row in self.df.index:
+
+            # Assign SLOPE related flags first
+            cur_sample = self.df.loc[each_row, 'slope']
+            m_up = cur_sample - up_th
+            m_down = down_th - cur_sample
+            m_flat_lo = cur_sample - flat_lo
+            m_flat_hi = flat_hi - cur_sample
+
+            #### Assign slope-driven flags based on the calculated margins
+            if abs(m_up) < tolerances['slope']:
+                ambiguityFlagsDf.loc[each_row, 'amb_up'] = True
+            # else False by default
+
+            if abs(m_down) < tolerances['slope']:
+                ambiguityFlagsDf.loc[each_row, 'amb_down'] = True
+            # else False by default
+
+            if abs(m_flat_lo) < tolerances['slope']:
+                ambiguityFlagsDf.loc[each_row, 'amb_flat_lo'] = True
+            # else False by default
+
+            if abs(m_flat_hi) < tolerances['slope']:
+                ambiguityFlagsDf.loc[each_row, 'amb_flat_hi'] = True
+            # else False by default
+
+            #### Assign TREND STRENGTH related flags next
+            cur_sample = self.df.loc[each_row, 'trend_strength']
+            m_ts = cur_sample - ts_th
+            if abs(m_ts) < tolerances['trend_strength']:
+                ambiguityFlagsDf.loc[each_row, 'amb_ts'] = True
+            # else False by default
+
+            #### Assign ZCR related flags next
+            cur_sample = self.df.loc[each_row, 'zcr']
+            m_zcr = cur_sample - zcr_th
+            if abs(m_zcr) < tolerances['zcr']:
+                ambiguityFlagsDf.loc[each_row, 'amb_zcr'] = True
+            # else False by default
+
+            #### Assign VOLATILITY related flags next
+            cur_sample = self.df.loc[each_row, 'volatility']
+            
+            m_vlow = v_lo - cur_sample
+            if abs(m_vlow) < tolerances['volatility']:
+                ambiguityFlagsDf.loc[each_row, 'amb_v_lo'] = True
+            # else False by default
+
+            m_vhi = cur_sample - v_hi
+            if abs(m_vhi) < tolerances['volatility']:
+                ambiguityFlagsDf.loc[each_row, 'amb_v_hi'] = True
+            # else False by default
+
+        return ambiguityFlagsDf
+
+
+    def _compute_tolerances(self, features_dict: dict) -> dict:
+        """
+        First, compute the robust sigma (scale) for each feature over the entire dataset.
+        These sigmas will be used as a robust estimate of scale. i.e., standard-deviation like quantity that:
+        - is not distorted by outliers
+        - works with skewed or heavy-tailed distributions
+        - is comparable across different features
+        
+        For this, we use InterQuartile range (IQR) but this is not on the same scale as the standard deviation.
+        Therefore, it needs to be scaled using a conversion factor. This conversion assumes:
+        If the data were normally distributed, what would be the IQR be relative to the standard deviation?
+
+        IQR of a standard distribution is approximately 1.349. (i.e., the quartile between the 25th and 75th percentiles)
+        This will be used as the scaling factor for all features to calculate a robust sigma that will remain stable
+        when the data is not normally distributed.
+
+        Then the tolerance is calculated as: tolerance = (IQR / IQR_normal) * k
+        where k is the pre-defined feature-specific value.
+        """
+
+        IQR_normal = 1.349  # IQR of standard distribution.
+
+        tolerances = {key: 0.0 for key in features_dict.keys()}  # keys are the features of interest.
+
+        for each_feature in tolerances.keys():
+            IQR = self.df[each_feature].quantile(0.75) - self.df[each_feature].quantile(0.25)
+            tolerances[each_feature] = (IQR / IQR_normal) * features_dict[each_feature]['k']
+
+        return tolerances
+
+
+    def temporal_stability_analysis(self, temporal_stability_params: dict, class_column='gt', save_folder='plots'):
         """
         Temporal stability analysis is a technique to analyze the stability of a time series over time.
         This analysis involves time drift, and frequency drift.
@@ -1037,13 +1330,11 @@ class DataInsights:
             save_path = Path(save_folder) / f'{current_feature}_drift_plot.png'
             save_path.parent.mkdir(parents=True, exist_ok=True)
             fig.savefig(str(save_path), dpi=300, bbox_inches='tight')
-            print(f"Plot saved to: {save_path}")
-            
-            # Add to PDF report if enabled
-            if hasattr(self, 'reportObj'):
-                self.reportObj.new_page(enable_write=enable_pdf_write)
-                self.reportObj.print(rprt.ReportDataType.HEADING_2, f"Temporal analysis - Feature Drift Plot for {current_feature}")
-                self.reportObj.print_image(save_path)
+            print(f"Plot saved to: {save_path}")           
+
+            self.reportObj.new_page(enable_write=enable_pdf_write)
+            self.reportObj.print(rprt.ReportDataType.HEADING_2, f"Temporal analysis - Feature Drift Plot for {current_feature}")
+            self.reportObj.print_image(save_path)
         
         # Display plot if requested
         if display_plots:

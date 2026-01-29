@@ -221,21 +221,69 @@ class reporter():
     """
   
 
-    def print_dataframe_as_table(self, df: pd.DataFrame):
+    def _wrap_text(self, text: str, max_width: int = 20) -> str:
+        """
+        Wrap long text at word boundaries to fit within max_width characters.
+        Inserts newlines to break long text into multiple lines.
+        
+        Args:
+            text: Text string to wrap
+            max_width: Maximum characters per line (default: 20)
+            
+        Returns:
+            Wrapped text string with newlines inserted
+        """
+        if len(text) <= max_width:
+            return text
+        
+        words = text.split()
+        wrapped_lines = []
+        current_line = ""
+        
+        for word in words:
+            # If adding this word would exceed max_width, start a new line
+            if current_line and len(current_line) + len(word) + 1 > max_width:
+                wrapped_lines.append(current_line)
+                current_line = word
+            else:
+                # Add word to current line
+                if current_line:
+                    current_line += " " + word
+                else:
+                    current_line = word
+        
+        # Add the last line
+        if current_line:
+            wrapped_lines.append(current_line)
+        
+        return "\n".join(wrapped_lines)
+
+    def print_dataframe_as_table(self, df: pd.DataFrame, max_name_width: int = 20):
         """
         Print a dataframe as a table to the report.
         df content will be transformed into list of lists as expected by the Table class.
+        Long column and row names are automatically wrapped to improve readability.
 
         Args:
-            dataframe: Pandas dataframe to print as a table
+            df: Pandas dataframe to print as a table
+            max_name_width: Maximum characters per line for column/row names before wrapping (default: 20)
         """
         if self.write_enabled:
             # Format numbers to 2 decimal places before converting to string
-            df_formatted = df.round(3)  # Float precision of 3 decimal places
+            df_formatted = df.round(3)  # Float precision of 3 decimal places (assuming all entries are float by default)
+
+            # If dtype is integer in df, remove the decimal point for pretty printing on table.
+            for each_column in df.columns:
+                if df[each_column].dtype == 'int':
+                    df_formatted[each_column] = df_formatted[each_column].astype(int)
+
             LoL = df_formatted.astype(str).values.tolist()  # Only gets the cell values as strings. No row or column names
 
-            row_names = df_formatted.astype(str).index.tolist()
-            col_names = df_formatted.astype(str).columns.tolist()
+            # Extract and wrap row names
+            row_names = [self._wrap_text(str(name), max_name_width) for name in df_formatted.index]
+            
+            # Extract and wrap column names
+            col_names = [self._wrap_text(str(name), max_name_width) for name in df_formatted.columns]
             col_names.insert(0, " ")  # Add a space character to row and column intersection cell
 
             for idx, row_name in enumerate(row_names):

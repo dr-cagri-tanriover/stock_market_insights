@@ -63,19 +63,23 @@ def get_feature_dataset_insights():
 
     features_to_plot = {'trend_strength': {
                                             'thresholds': [('strength_th', 0.36)],
-                                            'use_in_mahalanobis_distance': True
+                                            'use_in_mahalanobis_distance': True,
+                                            'k': 0.30 # used in label noise analysis (feature-specific value)
                                             },
                         'zcr': {
                                 'thresholds': [('hi_osc_th', 0.46)],
-                                'use_in_mahalanobis_distance': True
+                                'use_in_mahalanobis_distance': True,
+                                'k': 0.30 # used in label noise analysis (feature-specific value)
                                 },
                         'volatility': {
                                         'thresholds': [('hi_noise_th', 0.02), ('lo_vol_th', 0.008)],
-                                        'use_in_mahalanobis_distance': True
+                                        'use_in_mahalanobis_distance': True,
+                                        'k': 0.25 # used in label noise analysis (feature-specific value)
                                         },
                         'slope': {
                                     'thresholds': [('upward_th', 0.003), ('downward_th', -0.003), ('flatness_lo', -0.001), ('flatness_hi', 0.001)],
-                                    'use_in_mahalanobis_distance': True  # slope provides sign information and trend_strength uses its magnitude.
+                                    'use_in_mahalanobis_distance': True,  # slope provides sign information and trend_strength uses its magnitude.
+                                    'k': 0.25 # used in label noise analysis (feature-specific value)
                                     }
     }
 
@@ -87,7 +91,12 @@ def get_feature_dataset_insights():
 
     dsObj.temporal_stability_analysis(temporal_stability_params, class_column='gt', save_folder="plots")
 
+    # Following analysis needs the thresholds inside the feature_to_plot dictionary to work.
+    dsObj.label_noise_analysis(features_to_plot, class_column='gt', save_folder="plots")
+
     #dsObj.rule_based_classifier_analysis(features_to_plot, class_column='gt', save_folder="plots", display_plots=False)
+
+    #dsObj.stress_test_splits_analysis(class_column='gt', save_folder="plots")
 
     dsObj.end_operation()  # Internal dsObj operations are wrapped up inside this function.
 
