@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde, norm
+from sklearn.metrics import classification_report # accuracy_score, precision_score, recall_score, f1_score
 from pathlib import Path
 from utils import printing as prt
 from utils import reportify as rprt
@@ -857,6 +858,116 @@ class DataInsights:
             self.reportObj.print_image(save_path)
 
 
+    def rule_based_classifier_analysis(self, features_dict: dict, class_column: str, enable_pdf_write: bool = True):
+
+        """
+        This is a simple rule-based classifier that uses naive thresholds on the features to classify the dataset into classes.
+        Ground truth labels are created based on carefully computed thresholds based on the features. Therefore, those computations
+        are "oracle functions" that will always give 100% accurate label predictions. In this analysis we are trying to answer the following
+        question:
+        
+        "How far can a naive, hand written heuristic get without knowing the (oracle) labeling logic?"
+
+        You can include different types of naive classifiers here to evaluate.
+
+        """
+
+        # Classifier 1 - Naive percentile threshold classifier
+        self.percentile_threshold_classifier_evaluation(features_dict, class_column, enable_pdf_write)
+
+
+        print("Rule-based classifier analysis completed")
+        
+
+    # Classifier 1 - Naive percentile threshold classifier
+    def percentile_threshold_classifier_evaluation(self, features_dict, class_column, enable_pdf_write):
+
+        thresholds = {
+            'up_th': 0.0,  # lower bound for strong upward trend
+            'down_th': 0.0,  # upper bound for strong downward trend
+            'flat_th': 0.0,  # upper bound for flat trend (abs(slope) perspective)
+            'strong_ts_th': 0.0,  # lower bound for strong trend strength (ratio)
+            'zcr_th': 0.0,  # lower bound for high oscillation zero crossing rate
+            'vol_lo_th': 0.0,  # upper bound for low volatility
+            'vol_hi_th': 0.0  # lower bound for high volatility
+        }
+
+        # Naive percentile based threshold computations follow. These are likely to be picked up by eyeballing humans without detailed analysis.
+        thresholds['up_th'] = self.df['slope'].quantile(0.80)
+        thresholds['down_th'] = self.df['slope'].quantile(0.20)
+        thresholds['flat_th'] = abs(self.df['slope']).quantile(0.20)  # small mid band around zero slope to catch flat trends (note the abs() operator)
+        thresholds['strong_ts_th'] = self.df['trend_strength'].quantile(0.80)
+        thresholds['zcr_th'] = self.df['zcr'].quantile(0.70)
+        thresholds['vol_lo_th'] = self.df['volatility'].quantile(0.20)
+        thresholds['vol_hi_th'] = self.df['volatility'].quantile(0.80)
+
+        # Next let's use the thresholds to predict the label for each row in our dataset.
+        # Build predictions in a list and assign once to avoid DataFrame fragmentation.
+        labelsDf = pd.DataFrame(self.df[class_column].copy())
+        pred_list = []
+
+        for each_row in self.df.index:
+            # Identify the bool flags for each row
+            is_flat = abs(self.df.loc[each_row, 'slope']) <= thresholds['flat_th']
+            is_low_vol = self.df.loc[each_row, 'volatility'] <= thresholds['vol_lo_th']  # not volatile
+            is_ok_vol = self.df.loc[each_row, 'volatility'] <= thresholds['vol_hi_th']  # not excessively volatile
+            is_strong_ts = self.df.loc[each_row, 'trend_strength'] >= thresholds['strong_ts_th']  # strong trend strength
+            is_up_slope = self.df.loc[each_row, 'slope'] >= thresholds['up_th']  # upward slope
+            is_down_slope = self.df.loc[each_row, 'slope'] <= thresholds['down_th']  # downward slope
+            is_high_zcr = self.df.loc[each_row, 'zcr'] >= thresholds['zcr_th']  # high zero crossing rate
+
+            # Next let's check for each class case in a particular order as below, and assign the predicted label.
+            if is_flat and is_low_vol:
+                # CHECK 1 - STATIONARY CLASS
+                pred_list.append('STATIONARY')
+            elif is_up_slope and is_strong_ts and is_ok_vol and (not is_high_zcr):
+                # CHECK 2 - TREND_UP CLASS
+                pred_list.append('TREND_UP')
+            elif is_down_slope and is_strong_ts and is_ok_vol and (not is_high_zcr):
+                # CHECK 3 - TREND_DOWN CLASS
+                pred_list.append('TREND_DOWN')
+            elif is_high_zcr:
+                # CHECK 4 - OSCILLATING CLASS
+                pred_list.append('OSCILLATING')
+            else:
+                # CHECK 5 - OTHER CLASS
+                pred_list.append('OTHER')
+
+        labelsDf['pred'] = pred_list  # To avoid fragmentation associated with per cell assignment to dataframe in a loop.
+
+        # Performance evaluation of the naive classifier
+        y_true = labelsDf[class_column]
+        y_pred = labelsDf['pred']
+        
+        # Confusion matrix analysis (convention: rows = true class, columns = predicted class; matches sklearn.metrics.confusion_matrix)
+        cm = pd.crosstab(y_true, y_pred)
+        cm.index = [f"gt({idx})" for idx in cm.index]
+        cm.columns = [f"pred({col})" for col in cm.columns]
+        prt.print_dataframe(cm, justify_numeric="center")
+
+        # Precision, Recall, F1-score per class (tabular form from classification_report)
+        report_dict = classification_report(y_true, y_pred, output_dict=True)  # returns a dictionary, which is really helpful here!
+        report_df = pd.DataFrame(report_dict).T
+        # 'accuracy' is a scalar in the dict so that row has NaNs for precision/recall/f1
+        # Therefore, it makes sense to print it outside the dataframe for clarity.
+        acc_val = report_dict["accuracy"]
+        report_df = report_df.drop(index=["accuracy"])  # removing row 'accuracy' from dataframe.
+
+        report_df['support'] = report_df['support'].astype(int)  # convert the support column to integer type for pretty printing later
+
+        # Report the findings next.
+        message = f"Naive Percentile Threshold Classifier Performance Evaluation"
+        print(f"{message}")
+        prt.print_dataframe(report_df, justify_numeric="center")
+        print(f"Accuracy: {acc_val:.2%}")
+
+        self.reportObj.new_page(enable_write=enable_pdf_write)
+        self.reportObj.print(rprt.ReportDataType.HEADING_2, message)
+        self.reportObj.print_dataframe_as_table(report_df)
+        self.reportObj.print(rprt.ReportDataType.BODY, f"\n\n")
+        self.reportObj.print(rprt.ReportDataType.BODY, f"Accuracy: {acc_val:.2%}")
+
+    
     def label_noise_analysis(self, features_dict: dict = None, class_column: str = 'gt', save_folder: str = 'plots'):
 
         # Robust sigma (scale) will be computed over the entire dataset for each feature. Then tolerance per feature will be calculated.

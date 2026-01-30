@@ -94,7 +94,7 @@ def get_feature_dataset_insights():
     # Following analysis needs the thresholds inside the feature_to_plot dictionary to work.
     dsObj.label_noise_analysis(features_to_plot, class_column='gt', save_folder="plots")
 
-    #dsObj.rule_based_classifier_analysis(features_to_plot, class_column='gt', save_folder="plots", display_plots=False)
+    dsObj.rule_based_classifier_analysis(features_to_plot, class_column='gt')
 
     #dsObj.stress_test_splits_analysis(class_column='gt', save_folder="plots")
 
