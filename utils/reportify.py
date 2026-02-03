@@ -129,36 +129,29 @@ class reporter():
             )
 
         elif style_type == ReportDataType.TABLE:
-            return TableStyle([
-                        # Grid lines (borders)
-                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),  # All cells with grey grid
-                        
-                        # Header row formatting (first row)
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),  # Grey background for header
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),  # White text for header
-                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),  # Center align header
-                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Bold font for header
-                        ('FONTSIZE', (0, 0), (-1, 0), 11),  # Font size for header
-                        
-                        # Data rows formatting
-                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),  # Light background for data rows
-                        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),  # Black text for data
-                        ('ALIGN', (0, 1), (-1, -1), 'CENTER'),  # Center align data cells
-                        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),  # Regular font for data
-                        ('FONTSIZE', (0, 1), (-1, -1), 11),  # Font size for data cells
-                        
-                        # Cell padding
-                        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                        ('TOPPADDING', (0, 0), (-1, -1), 6),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                        
-                        # Alternating row colors (optional - for better readability)
-                        # ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
-                    ])
-
+            return self._get_table_style(11, 10)
         else:
             return getSampleStyleSheet()['Normal']
+
+    def _get_table_style(self, font_size_header: int | float = 11, font_size_cell: int | float = 10) -> TableStyle:
+        """Return TableStyle with given header and cell font sizes (used for PDF table rendering)."""
+        return TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), font_size_header),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), font_size_cell),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ])
 
     # Function to set PDF metadata on first page
     def on_first_page(self, canvas, doc):
@@ -198,17 +191,20 @@ class reporter():
             if title is not None:
                 self.print(ReportDataType.TITLE, title)
 
-    def add_table_data(self, table_LoL: List[List[Any]]):
+    def add_table_data(self, table_LoL: List[List[Any]], font_size: float | None = None):
         """
         Add a table section to the report.
 
         Args:
-            table_dict: Dictionary containing the table data
+            table_LoL: List of lists (table data)
+            font_size: If set, use this font size (pt) for header and data cells in the PDF.
         """
-        
         self.indices.field_index += 1  # Data will be added to a new field.
         new_key = f"{ReportDataType.TABLE}_{self.indices.field_index}"
-        self.report_dict[self.indices.page_index][new_key] = table_LoL
+        if font_size is not None:
+            self.report_dict[self.indices.page_index][new_key] = (table_LoL, font_size)
+        else:
+            self.report_dict[self.indices.page_index][new_key] = table_LoL
 
 
     """
@@ -221,44 +217,58 @@ class reporter():
     """
   
 
-    def _wrap_text(self, text: str, max_width: int = 20) -> str:
+    def _wrap_text(self, text: str, max_width: int = 20, font_size: float | None = None, reference_font_size: float = 11.0) -> str:
         """
-        Wrap long text at word boundaries to fit within max_width characters.
-        Inserts newlines to break long text into multiple lines.
-        
+        Wrap long text to fit within max_width characters per line.
+        Breaks at word boundaries when possible; breaks long words (no spaces) at max_width.
+
         Args:
             text: Text string to wrap
-            max_width: Maximum characters per line (default: 20)
-            
+            max_width: Maximum characters per line at reference_font_size (default: 20)
+            font_size: If set, scale wrap width by (reference_font_size / font_size):
+                      larger font → fewer chars per line, smaller font → more.
+            reference_font_size: Font size at which max_width applies (default: 11)
+
         Returns:
             Wrapped text string with newlines inserted
         """
-        if len(text) <= max_width:
+        effective_width = max_width
+        if font_size is not None and font_size > 0:
+            effective_width = max(1, int(max_width * reference_font_size / font_size))
+
+        if len(text) <= effective_width:
             return text
-        
+
         words = text.split()
         wrapped_lines = []
         current_line = ""
-        
+
         for word in words:
-            # If adding this word would exceed max_width, start a new line
-            if current_line and len(current_line) + len(word) + 1 > max_width:
+            # If a single word exceeds effective_width, break it into chunks
+            while len(word) > effective_width:
+                if current_line:
+                    wrapped_lines.append(current_line)
+                    current_line = ""
+                # Take one full line from the word
+                wrapped_lines.append(word[:effective_width])
+                word = word[effective_width:]
+
+            # Now word fits in one line; add to current line or start new
+            if current_line and len(current_line) + len(word) + 1 > effective_width:
                 wrapped_lines.append(current_line)
                 current_line = word
             else:
-                # Add word to current line
                 if current_line:
                     current_line += " " + word
                 else:
                     current_line = word
-        
-        # Add the last line
+
         if current_line:
             wrapped_lines.append(current_line)
-        
+
         return "\n".join(wrapped_lines)
 
-    def print_dataframe_as_table(self, df: pd.DataFrame, max_name_width: int = 20):
+    def print_dataframe_as_table(self, df: pd.DataFrame, max_name_width: int = 20, font_size: float | None = None):
         """
         Print a dataframe as a table to the report.
         df content will be transformed into list of lists as expected by the Table class.
@@ -267,6 +277,8 @@ class reporter():
         Args:
             df: Pandas dataframe to print as a table
             max_name_width: Maximum characters per line for column/row names before wrapping (default: 20)
+            font_size: If set, wrap width is scaled by font size (larger font → fewer chars per line).
+                      Use the same value as the table's FONTSIZE in the report style for consistent fit.
         """
         if self.write_enabled:
             # Format numbers to 2 decimal places before converting to string
@@ -280,10 +292,10 @@ class reporter():
             LoL = df_formatted.astype(str).values.tolist()  # Only gets the cell values as strings. No row or column names
 
             # Extract and wrap row names
-            row_names = [self._wrap_text(str(name), max_name_width) for name in df_formatted.index]
+            row_names = [self._wrap_text(str(name), max_name_width, font_size=font_size) for name in df_formatted.index]
             
             # Extract and wrap column names
-            col_names = [self._wrap_text(str(name), max_name_width) for name in df_formatted.columns]
+            col_names = [self._wrap_text(str(name), max_name_width, font_size=font_size) for name in df_formatted.columns]
             col_names.insert(0, " ")  # Add a space character to row and column intersection cell
 
             for idx, row_name in enumerate(row_names):
@@ -292,8 +304,8 @@ class reporter():
             # As the final step, insert the col_names into LoL as the first list entry
             LoL.insert(0, col_names)
 
-            # Then add the table to the ongoing report content list
-            self.add_table_data(LoL)
+            # Then add the table to the ongoing report content list (pass font_size so PDF table uses it)
+            self.add_table_data(LoL, font_size=font_size)
 
 
 
@@ -347,6 +359,12 @@ class reporter():
 
                 data_type = data_type_key.split("_")[0]  # separate the data type string from the field index
                 if data_type == ReportDataType.TABLE:
+                    # Unpack optional (data, font_size) stored by add_table_data
+                    table_font_size = None
+                    if isinstance(data, tuple) and len(data) == 2:
+                        data, table_font_size = data
+                    if not data:
+                        continue
                     # Write table type data to report
                     # Calculate column widths to fit page width
                     # Letter page width: 612 points, margins: 36 points each side
@@ -354,10 +372,46 @@ class reporter():
                     num_cols = len(data[0]) if data else 1
                     col_width = available_width / num_cols if num_cols > 0 else available_width
                     col_widths = [col_width] * num_cols
-                    
-                    table = Table(data, colWidths=col_widths)
-                    # Apply custom table style
-                    table.setStyle(self.get_style(data_type))
+
+                    # Font sizes: use table_font_size if provided, else defaults (11 header, 10 data)
+                    fs_header = table_font_size if table_font_size is not None else 11
+                    fs_cell = table_font_size if table_font_size is not None else 10
+
+                    # Paragraph styles for table cells so newlines in wrapped text render as line breaks
+                    # (ReportLab ignores \n in plain strings; Paragraph with <br/> respects breaks)
+                    table_header_ps = ParagraphStyle(
+                        name='TableHeader',
+                        parent=self.basic_style['Normal'],
+                        fontName='Helvetica-Bold',
+                        fontSize=fs_header,
+                        textColor=colors.whitesmoke,
+                        alignment=TA_CENTER,
+                        leading=fs_header + 1,
+                    )
+                    table_cell_ps = ParagraphStyle(
+                        name='TableCell',
+                        parent=self.basic_style['Normal'],
+                        fontName='Helvetica',
+                        fontSize=fs_cell,
+                        alignment=TA_CENTER,
+                        leading=fs_cell + 1,
+                    )
+                    # Convert string cells containing newlines to Paragraph so header/data wrapping shows
+                    table_data = []
+                    for r, row in enumerate(data):
+                        new_row = []
+                        for cell in row:
+                            if isinstance(cell, str) and '\n' in cell:
+                                style = table_header_ps if r == 0 else table_cell_ps
+                                new_row.append(Paragraph(cell.replace('\n', '<br/>'), style))
+                            else:
+                                new_row.append(cell)
+                        table_data.append(new_row)
+
+                    table = Table(table_data, colWidths=col_widths)
+                    # Apply custom table style (with font size when provided)
+                    table_style = self._get_table_style(fs_header, fs_cell)
+                    table.setStyle(table_style)
                     content_list.append(table)
                 elif data_type == ReportDataType.IMAGE:
                     # Write image type data to report

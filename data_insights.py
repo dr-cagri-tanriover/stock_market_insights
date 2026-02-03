@@ -387,7 +387,7 @@ class DataInsights:
         for each_category in categorical_columns:
             ##print(f"Generating descriptive statistics for [{each_category}] categorical column:")
             message = f"Generating descriptive statistics for [{each_category}] categorical column:\n\n"
-            self.reportObj.print(rprt.ReportDataType.BODY, message)  # Print the paragraph to the console as well as the pdf report
+            print(f"{message}")  # Print the paragraph to the console only
 
             # Get unique items in each_category column to iterate as needed
             unique_items = self.df[each_category].unique()
@@ -858,6 +858,63 @@ class DataInsights:
             self.reportObj.print_image(save_path)
 
 
+    def stress_test_splits_analysis(self, feature_dict: dict, class_column: str, save_folder: str, enable_pdf_write: bool = True):
+
+   
+        self._year_regime_transfer_tests(feature_dict, class_column, save_folder, enable_pdf_write)
+
+        #self._leave_one_ticker_out_tests()
+        
+
+    def _year_regime_transfer_tests(self, feature_dict: dict, class_column: str, save_folder: str, enable_pdf_write: bool = True):
+
+        # Odd test indices have no temporal leakage and are used for production generalizability.
+        # Even test indices are ONLY FOR DIAGNOSTICS NOT PRODUCTION GENERALIZABILITY DUE TO TEMPORAL LEAKAGE (train on future to test on the past) 
+        year_splits = { 
+            'test_1': {'train_start_end_years': (2017, 2019), 'test_start_end_years': (2020, 2020)},  # inclusive bounds for train and test years
+            'test_2': {'train_start_end_years': (2020, 2020), 'test_start_end_years': (2017, 2019)},  # inclusive bounds for train and test years
+            'test_3': {'train_start_end_years': (2019, 2021), 'test_start_end_years': (2022, 2022)},  # inclusive bounds for train and test years
+            'test_4': {'train_start_end_years': (2022, 2022), 'test_start_end_years': (2019, 2021)},  # inclusive bounds for train and test years
+            'test_5': {'train_start_end_years': (2017, 2019), 'test_start_end_years': (2022, 2022)},  # inclusive bounds for train and test years
+            'test_6': {'train_start_end_years': (2022, 2022), 'test_start_end_years': (2017, 2019)}  # inclusive bounds for train and test years
+        }
+
+        get_year = lambda intTimestamp: datetime.strptime(str(intTimestamp), '%Y%m%d').year  # helper lambda function to get the year from the dataset 'end_date'
+
+        for testIdx,each_split in enumerate(year_splits):
+
+            train_start_year, train_end_year = year_splits[each_split]['train_start_end_years']
+            trainDf = self.df[(self.df['end_date'].apply(get_year) >= train_start_year) & (self.df['end_date'].apply(get_year) <= train_end_year)]
+
+            test_start_year, test_end_year = year_splits[each_split]['test_start_end_years']
+            testDf = self.df[(self.df['end_date'].apply(get_year) >= test_start_year) & (self.df['end_date'].apply(get_year) <= test_end_year)]
+
+            # Fit thresholds for the train dataframe
+            thresholds = self._fit_thresholds(trainDf)
+
+            # Predict labels for the test dataframe
+            y_true, y_pred = self._predict_labels(testDf, thresholds, class_column)
+
+            # Evaluate the classifier
+            acc_val, report_df, conf_matrix = self._evaluate_classifier(y_true, y_pred, class_column)
+
+            # Report the results
+            message = f"Stress-tests > Year Regime Transfer Test {each_split.split('_')[-1]}: train on: {train_start_year}-{train_end_year} and test on: {test_start_year}-{test_end_year}"
+            print(f"{message}")
+            prt.print_dataframe(report_df, justify_numeric="center")
+            print(f"Accuracy: {acc_val:.2%}")
+
+            self.reportObj.new_page(enable_write=enable_pdf_write)
+
+            self.reportObj.print(rprt.ReportDataType.HEADING_2, message)
+            self.reportObj.print_dataframe_as_table(conf_matrix, font_size=8)
+            self.reportObj.print(rprt.ReportDataType.BODY, f"\n\n")
+
+            self.reportObj.print_dataframe_as_table(report_df)
+            self.reportObj.print(rprt.ReportDataType.BODY, f"\n\n")
+            self.reportObj.print(rprt.ReportDataType.BODY, f"Accuracy: {acc_val:.2%}")
+
+
     def rule_based_classifier_analysis(self, features_dict: dict, class_column: str, enable_pdf_write: bool = True):
 
         """
@@ -877,11 +934,14 @@ class DataInsights:
 
 
         print("Rule-based classifier analysis completed")
-        
 
-    # Classifier 1 - Naive percentile threshold classifier
-    def percentile_threshold_classifier_evaluation(self, features_dict, class_column, enable_pdf_write):
 
+    def _fit_thresholds(self, sourceDf: pd.DataFrame) -> dict:
+        """
+        Computes a set of thresholds based on user-defined logic.
+        """
+
+        # Naive percentile based threshold computations follow. These are likely to be picked up by eyeballing humans without detailed analysis.
         thresholds = {
             'up_th': 0.0,  # lower bound for strong upward trend
             'down_th': 0.0,  # upper bound for strong downward trend
@@ -892,29 +952,34 @@ class DataInsights:
             'vol_hi_th': 0.0  # lower bound for high volatility
         }
 
-        # Naive percentile based threshold computations follow. These are likely to be picked up by eyeballing humans without detailed analysis.
-        thresholds['up_th'] = self.df['slope'].quantile(0.80)
-        thresholds['down_th'] = self.df['slope'].quantile(0.20)
-        thresholds['flat_th'] = abs(self.df['slope']).quantile(0.20)  # small mid band around zero slope to catch flat trends (note the abs() operator)
-        thresholds['strong_ts_th'] = self.df['trend_strength'].quantile(0.80)
-        thresholds['zcr_th'] = self.df['zcr'].quantile(0.70)
-        thresholds['vol_lo_th'] = self.df['volatility'].quantile(0.20)
-        thresholds['vol_hi_th'] = self.df['volatility'].quantile(0.80)
+                # Naive percentile based threshold computations follow. These are likely to be picked up by eyeballing humans without detailed analysis.
+        thresholds['up_th'] = sourceDf['slope'].quantile(0.80)
+        thresholds['down_th'] = sourceDf['slope'].quantile(0.20)
+        thresholds['flat_th'] = abs(sourceDf['slope']).quantile(0.20)  # small mid band around zero slope to catch flat trends (note the abs() operator)
+        thresholds['strong_ts_th'] = sourceDf['trend_strength'].quantile(0.80)
+        thresholds['zcr_th'] = sourceDf['zcr'].quantile(0.70)
+        thresholds['vol_lo_th'] = sourceDf['volatility'].quantile(0.20)
+        thresholds['vol_hi_th'] = sourceDf['volatility'].quantile(0.80)
 
-        # Next let's use the thresholds to predict the label for each row in our dataset.
+        return thresholds
+
+
+    def _predict_labels(self, sourceDf: pd.DataFrame, thresholds: dict, class_column: str) -> tuple[pd.Series, pd.Series]:
+        # Let's use the thresholds to predict the label for each row in our dataset.
         # Build predictions in a list and assign once to avoid DataFrame fragmentation.
-        labelsDf = pd.DataFrame(self.df[class_column].copy())
+
+        labelsDf = pd.DataFrame(sourceDf[class_column].copy())
         pred_list = []
 
-        for each_row in self.df.index:
+        for each_row in sourceDf.index:
             # Identify the bool flags for each row
-            is_flat = abs(self.df.loc[each_row, 'slope']) <= thresholds['flat_th']
-            is_low_vol = self.df.loc[each_row, 'volatility'] <= thresholds['vol_lo_th']  # not volatile
-            is_ok_vol = self.df.loc[each_row, 'volatility'] <= thresholds['vol_hi_th']  # not excessively volatile
-            is_strong_ts = self.df.loc[each_row, 'trend_strength'] >= thresholds['strong_ts_th']  # strong trend strength
-            is_up_slope = self.df.loc[each_row, 'slope'] >= thresholds['up_th']  # upward slope
-            is_down_slope = self.df.loc[each_row, 'slope'] <= thresholds['down_th']  # downward slope
-            is_high_zcr = self.df.loc[each_row, 'zcr'] >= thresholds['zcr_th']  # high zero crossing rate
+            is_flat = abs(sourceDf.loc[each_row, 'slope']) <= thresholds['flat_th']
+            is_low_vol = sourceDf.loc[each_row, 'volatility'] <= thresholds['vol_lo_th']  # not volatile
+            is_ok_vol = sourceDf.loc[each_row, 'volatility'] <= thresholds['vol_hi_th']  # not excessively volatile
+            is_strong_ts = sourceDf.loc[each_row, 'trend_strength'] >= thresholds['strong_ts_th']  # strong trend strength
+            is_up_slope = sourceDf.loc[each_row, 'slope'] >= thresholds['up_th']  # upward slope
+            is_down_slope = sourceDf.loc[each_row, 'slope'] <= thresholds['down_th']  # downward slope
+            is_high_zcr = sourceDf.loc[each_row, 'zcr'] >= thresholds['zcr_th']  # high zero crossing rate
 
             # Next let's check for each class case in a particular order as below, and assign the predicted label.
             if is_flat and is_low_vol:
@@ -938,22 +1003,147 @@ class DataInsights:
         # Performance evaluation of the naive classifier
         y_true = labelsDf[class_column]
         y_pred = labelsDf['pred']
-        
-        # Confusion matrix analysis (convention: rows = true class, columns = predicted class; matches sklearn.metrics.confusion_matrix)
+
+        return y_true, y_pred
+
+
+    def _evaluate_classifier(self, y_true: pd.Series, y_pred: pd.Series, class_column: str) -> pd.DataFrame:
+        """
+        Evaluates the performance of a classifier by generating the confusion matrix and the classification report.
+        """
+
+        # Availability of classes in y_pred and y_true need to be checked as part of the classifier evaluation.
+        all_classes = self.df[class_column].unique()  # capturing all unique classes from the original dataset
+
+        missing_classes_in_true = [each_class for each_class in all_classes if each_class not in y_true.unique()]
+        missing_classes_in_pred = [each_class for each_class in all_classes if each_class not in y_pred.unique()]
+
         cm = pd.crosstab(y_true, y_pred)
+
+        if len(missing_classes_in_true) > 0 or len(missing_classes_in_pred) > 0:
+        # Confusion matrix needs manual adjustment to maintain the expected symmetry.
+            cm = self._fix_confusion_matrix(cm, missing_classes_in_true, missing_classes_in_pred)
+            
         cm.index = [f"gt({idx})" for idx in cm.index]
         cm.columns = [f"pred({col})" for col in cm.columns]
         prt.print_dataframe(cm, justify_numeric="center")
 
         # Precision, Recall, F1-score per class (tabular form from classification_report)
-        report_dict = classification_report(y_true, y_pred, output_dict=True)  # returns a dictionary, which is really helpful here!
+        # Note all_classes are passed to the classification_report function to ensure the report is based on the complete set of classes rather than
+        # those included in y_pred and y_true only (which may be a subset!)
+        report_dict = classification_report(y_true, y_pred, output_dict=True, labels=all_classes, zero_division=np.nan)  # zero_division=np.nan: use NaN when no samples for a class (avoids divide-by-zero warning)
         report_df = pd.DataFrame(report_dict).T
+
+        # Some classes may have zero support in y_true, which will penalize macro average calculations.
+        # The following routine fixes that by calculating an additional macro average based on the classes with non-zero support ("nzs macro avg") only.
+        # If zero support makes no difference in macro avg (in case of NaNs in cells), the nzs macro avg row will be the same as the macro avg row.
+        report_df = self._nonzero_support_macro_avg_adjustment(report_df, all_classes)
+
         # 'accuracy' is a scalar in the dict so that row has NaNs for precision/recall/f1
         # Therefore, it makes sense to print it outside the dataframe for clarity.
         acc_val = report_dict["accuracy"]
         report_df = report_df.drop(index=["accuracy"])  # removing row 'accuracy' from dataframe.
 
         report_df['support'] = report_df['support'].astype(int)  # convert the support column to integer type for pretty printing later
+
+        return acc_val, report_df, cm
+
+
+    def _nonzero_support_macro_avg_adjustment(self, report_df: pd.DataFrame, all_classes: list) -> pd.DataFrame:
+        """
+        Some classes may have zero support in y_true, which will penalize macro average calculations.
+        The following routine fixes that by calculating an additional macro average based on the classes with non-zero support ("nzs macro avg") only.
+        """
+
+        non_zero_support_count = (report_df.loc[all_classes, 'support'] != 0).sum()  # Only looking at the classes rows!
+
+        nzs_macro_avg_series = pd.Series(index=['precision', 'recall', 'f1-score', 'support'], dtype=float, name='nzs macro avg')
+        nzs_macro_avg_series['precision'] = report_df.loc[all_classes, 'precision'].sum() / non_zero_support_count
+        nzs_macro_avg_series['recall'] = report_df.loc[all_classes, 'recall'].sum() / non_zero_support_count
+        nzs_macro_avg_series['f1-score'] = report_df.loc[all_classes, 'f1-score'].sum() / non_zero_support_count
+        nzs_macro_avg_series['support'] = report_df.loc['macro avg', 'support']   # support is the same as the macro avg support.
+        report_df.loc['nzs macro avg', :] = nzs_macro_avg_series  # add as new row entry at the end of the DataFrame
+
+        # Move 'weighted avg' row to the end of the DataFrame to keep nzs macro avg and macro avg close for easier visual comparison.
+        weighted_avg_row = report_df.loc['weighted avg', :]
+        report_df = report_df.drop(index=['weighted avg'])
+        # Safest method is concatenation to avoid index alignment issues.
+        report_df = pd.concat([report_df, weighted_avg_row.to_frame().T], ignore_index=False)
+        
+        return report_df
+
+
+    def _fix_confusion_matrix(self, cm: pd.DataFrame, missing_classes_in_true: list, missing_classes_in_pred: list) -> pd.DataFrame:
+
+        # Create a list of all missing classes along rows and columns.
+        missing_set = set(missing_classes_in_true + missing_classes_in_pred)  # this will include unique missing classes.
+
+        # Identify the shortest dimension in cm.
+        rows, cols = cm.shape
+
+        if rows < cols:
+            # There are more columns than rows in the confusion matrix.
+            # Add the classes in COLUMNS to the missing locations in the ROWS until the length if rows and columns are equal.
+            start_col_idx = len(cm.index)  # start index is where the row index ends
+            end_col_idx = len(cm.columns)  # end index is where the columns end
+
+            classes_to_add = cm.columns[start_col_idx:end_col_idx]  # these are the classes the rows are missing (order maintained here!)
+
+            for each_class in classes_to_add:
+                cm.loc[each_class,:] = 0  # populates a complete new row with the index name.
+
+            # Number of rows and columns and their names are now the same at this point
+            # Scan for the missing_set will be executed later.
+
+        elif rows > cols:
+            # There are more rows than columns in the confusion matrix.
+            # Add the classes in ROWS to the missing locations in the COLUMNS until the length if rows and columns are equal.
+            start_row_idx = len(cm.columns)  # start index is where the column index ends
+            end_row_idx = len(cm.index)  # end index is where the rows end
+
+            classes_to_add = cm.index[start_row_idx:end_row_idx]  # these are the classes the columns are missing (order maintained here!)
+
+            for each_class in classes_to_add:
+                cm.loc[:,each_class] = 0  # populates a complete new column with the index name.
+
+            # Number of rows and columns and their names are now the same at this point
+            # Scan for the missing_set will be executed later.
+        else:
+            # Rows and columns are already the same length. No need to do anything.
+            print(f"Rows and columns are already the same length. Checking for any missing classes in the set.")
+
+
+        # At this point, the length of the columnsa and the rows MUST be identical (as well as their names!)
+        # Then scan the missing_set and add any missing common classes to both the rows and columns to complete.
+        rows, cols = cm.shape  # Recapture the shape of the matrix in case any row or columns have changed so far.
+
+        if rows != cols:
+            raise ValueError(f"Rows and columns lengths are not the same in the confusion matrix. Rows: {rows}, Columns: {cols}")
+
+        classes_to_add = missing_set.difference(set(cm.columns))  # classes in missing_set that are NOT in columns (or rows)
+        if len(classes_to_add) > 0:
+            # There are classes to add to cm.
+            # insert each missing class in missing_set into respective rows and columns of the confusion matrix.
+            for each_class in classes_to_add:
+                cm.loc[each_class, each_class] = 0  # populates the intersection cell value only but NaNs the remaining new elements
+                cm.loc[each_class, :] = 0  # populates the entire new row with 0
+                cm.loc[:, each_class] = 0  # populates the entire new column with 0
+
+        return cm.astype('int64')  # convert the confusion matrix to integer type for pretty printing later
+    
+  
+
+    # Classifier 1 - Naive percentile threshold classifier
+    def percentile_threshold_classifier_evaluation(self, features_dict, class_column, enable_pdf_write):
+
+        # Naive percentile based threshold computations follow. These are likely to be picked up by eyeballing humans without detailed analysis.
+        thresholds = self._fit_thresholds(self.df)
+
+        # Next let's use the thresholds to predict the label for each row in our dataset.
+        y_true, y_pred = self._predict_labels(self.df, thresholds, class_column)
+
+        # Performance evaluation of the naive classifier
+        acc_val, report_df, _ = self._evaluate_classifier(y_true, y_pred, class_column)  # confusion matrix is not needed here.
 
         # Report the findings next.
         message = f"Naive Percentile Threshold Classifier Performance Evaluation"

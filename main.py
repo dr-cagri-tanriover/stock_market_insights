@@ -83,11 +83,12 @@ def get_feature_dataset_insights():
                                     }
     }
 
-    dsObj.confusion_risk_analysis(features_to_plot, class_column='gt', save_folder="plots", display_plots=False)
-
     temporal_stability_params = {'annual_time_step': 1, # determines the 'eras' of the dataset to be analyzed in units of years.
                                  #'sliding_months': 12 # determines the sliding window size for the analysis in units of months. For future use.
                                  }
+
+
+    dsObj.confusion_risk_analysis(features_to_plot, class_column='gt', save_folder="plots", display_plots=False)
 
     dsObj.temporal_stability_analysis(temporal_stability_params, class_column='gt', save_folder="plots")
 
@@ -96,10 +97,9 @@ def get_feature_dataset_insights():
 
     dsObj.rule_based_classifier_analysis(features_to_plot, class_column='gt')
 
-    #dsObj.stress_test_splits_analysis(class_column='gt', save_folder="plots")
+    dsObj.stress_test_splits_analysis(feature_dict=features_to_plot, class_column='gt', save_folder="plots")
 
     dsObj.end_operation()  # Internal dsObj operations are wrapped up inside this function.
-
 
     # Press Enter key to exit the program
     print("\nPress Enter key to exit the program...")
