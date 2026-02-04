@@ -1,10 +1,10 @@
 # Generating Stock Market Insights
 
-This is my ML project where I explore various trends of the stock market. I decided to undertake this project to explore real stock market data in the US, and to generate meaningful insights that would help me understand a bit more about stock price movements and trends by using my existing ML knowledge and skills. I also aim to expand my ML skills by solving real world problems using real world data, which is my key motivation.
+This is one of my ML projects (based on a time-series dataset I created) where I explore various trends of the stock market. I decided to undertake this project to explore real stock market data in the US, and to generate meaningful insights that would help me understand a bit more about stock price movements and trends by using my existing ML knowledge and skills. I also aim to expand my ML skills by solving real world problems using real world data, which is my key motivation.
 
-I plan to explore different problems in this repository, and I will cover each problem as part of this document to provide the necessary details for each.
+Though this solution is not designed to predict future stock prices, it may be useful for deciding whether the predicted price regime makes sense to invest or hold. Therefore, there is a scope for a practical application of this solution too.
 
-## Problem 1 - Time-series trend classification
+## Time-series trend/regime classification
 
 ### Problem Definition:   
 This is a multi-class classification problem where I use 30-day OHLCV data on different stocks. ***(OHLVC is a standard format used to represent daily price and volume data  for any traded asset. It represents Opening price, Highest price, Lowest price, Closing price, and Volume (or number) of shares traded )***
@@ -22,38 +22,39 @@ My challenge is to find out whether the OHLCV data on different stocks will allo
 **5. No distinct trend *(class name: OTHER)*:** Any trend that cannot be classified as one of the above 4 will be categorized as OTHER.
 
 In other words, I am trying to model the following in this challenge:  
-***"Given a 30-day price profile, can I determine which of the above 5 regimes does that profile belong to?"***
+***"Given a 30-day historical price profile, can I determine which of the above 5 regimes that profile belongs to?"***
 
 ### First things first - What is meant by "price"?
-While talking about my technical approach in the rest of this section, you will come across the word "price" often. I already mentioned the OHLCV data we will use has 4 different prices: Opening, Closing, (Daily) High and (Daily) Low. However, I did not mention which one of those 4 different prices I will be using while creating a solution to Problem 1, which I will try to clarify here.
+While talking about my technical approach in the rest of this section, you will come across the word "price" often. I already mentioned the OHLCV data we will use has 4 different prices: Opening, Closing, (Daily) High and (Daily) Low. However, I did not mention which one of those 4 different prices I will be using in my solution, which I will clarify next.
 
-There is no simple answer to which price you should use as it depends on what you would like to calculate and how detailed you would like your analysis to be. To keep things simple (especially for your initial design) you can simply choose one of Open, Close, High or Low prices listed for each day for a stock ticker, and use it as your reference for calculating all of the metrics (which will be explained in detail later) This is the simplest approach and does not require computation of additional features related to price.
+There is no simple answer to which price you should use as it depends on what you would like to calculate and how detailed you would like your analysis to be.
 
 Note a stock can go for an unexpected split that introduces price inconsistencies over time, and this can be fixed by using the "Adjusted" versions of the prices. Typically, most finance APIs provide a price and its adjusted version (e.g., Close and Adjusted Close as can be requested using yfinance python library)
 
-Unless stated otherwise, in the rest of this section, "price" will refer to "Adjusted Close" price. If you are interested in exploring additional price metrics to experiment with, you can refer to my <a href="readme_images/price_definitions.pdf">price definitions</a> where I summarize different types of prices and their uses.
+Unless stated otherwise, in the rest of this section, "price" will refer to **"Adjusted Close"** price. This is the simplest approach I adopted, which does not require computation of additional features related to price. To keep things simple (especially for my initial design) I could also choose one of Open, Close, High or Low prices listed for each day for a stock ticker, and use it as my reference for calculating all of the metrics (which will be explained in detail later)
+
+If you are interested in exploring additional price metrics to experiment with, you can refer to my <a href="readme_images/price_definitions.pdf">price definitions</a> where I summarize different types of prices and their uses.
 
 
 ### Feature Definitions:
-The 5 classes we defined are based on the "shape" of the 30-day price change. Therefore, the useful features will be the "shape-defining" ones, and will help us develop machine learning models.
+The 5 classes we defined are based on the "shape" of the 30-day price change. Therefore, the useful features will be the "shape-defining" ones I will use moving forward.
 
 Following are the 4 shape-defined core features I will be using. These are the minimum set of features that will help me create a credible classifier.
 
-***1. Slope of linear fit:*** We simply fit a straight line on the prices inside the 30-day frame for a given stock, and calculate the slope (b) of that line.
+***1. Slope of linear fit:*** An obvious approach here is to fit a straight line to the prices inside the 30-day frame for a given stock, and calculate the slope (b) of that line. However, using log of prices rather than the raw stock prices while fitting a line is a better approach for the following reasons:
 
-***Note:*** *Using log of prices rather than the raw stock prices while fitting a line is a good approach for the following reasons:*
 - Log prices make trend and volatility measures scale-invariant across different stocks.
 - Log prices also allow comparison between different timelines (where absolute price difference in the same stock may be vastly different-e.g., price in 2005 vs. 2025)
 - Log prices align naturally with log returns as well (as will be discussed shortly).
 - Using logs gives more stable statistical behavior for window-based classification.
 
-***CAUTION 1:*** *When using log of prices, keep in mind ln(0) is undefined. Therefore, you need to pre-filter zero dollar prices prior to applying log to them !!*
+***CAUTION 1:*** *When using log of prices, keep in mind ln(0) is undefined. Therefore, you need to pre-filter zero dollar raw prices prior to applying log operator on them !!*
 
-***CAUTION 2:*** *When using log of prices, slope b will measure the relative drift rather than the absolute price drift of the stock.*
+***CAUTION 2:*** *When using log of prices, slope (b) will measure the relative drift rather than the absolute price drift of the stock.*
 
 ***CAUTION 3:*** *If you calculate b based on log prices, it will approximately be equal to the (fixed) percentage change in price over time (especially true for small b values). This is regardless of the stock price, which allows direct comparison between different stocks in our solution.*
 
-*Using raw prices will make sense in the case of the following:*
+*Though I will be using log of prices in this solution, using raw prices makes sense in the case of the following:*
 - When analyzing one stock ticker only
 - Price level itself is meaningful
 - Interpretability  in absolute ($) units matters
@@ -66,7 +67,7 @@ Following are the 4 shape-defined core features I will be using. These are the m
   <img src="readme_images/trend_strength.png" alt="trend strength" height="50px">
 </div>
 
-***Important:*** *If you calculate the |b| based on the log of prices in the 30-day frame rather than the raw prices, the standard deviation also has to be calculated using the log of prices in that same 30-day frame for consistency!*
+***Important:*** *Since I calculate the |b| based on the log of prices in the 30-day frame (rather than the raw prices), the standard deviation also has to be calculated using the log of prices in that same 30-day frame for consistency!*
 
 
 ***3. Volatility from returns:*** Volatility is defined as the standard deviation of returns, and it measures how much the signal fluctuates relative to its average behavior. We first convert raw prices to "returns" as working with returns has the following advantages:  
@@ -74,104 +75,107 @@ Following are the 4 shape-defined core features I will be using. These are the m
 - It stabilizes variance
 - It captures relative movement instead of absolute price level
 
-For each 30-day frame, we can calculate 29 simple return values as follows:
+For each 30-day frame, it is possible to calculate 29 **simple return values** as follows (where 'x' indicates a raw adjusted close price):
 <div align="center">
-  <img src="readme_images/simple_return.png" alt="simple return" height="50px">
+  <img src="readme_images/simple_return.png" alt="simple return" height="80px">
 </div>
 
-We then calculate the mean return value and calculate the volatility (v), which is simply the standard deviation of returns within the 30-day frame as follows (note N=29 in a 30-day frame): 
+After calculating the simple returns as above, we can calculate the mean return value and the volatility (v), which is simply the standard deviation of returns within the 30-day frame as follows (note N=29 in a 30-day frame): 
 
 <div align="center">
-  <img src="readme_images/volatility.png" alt="volatility" height="50px">
+  <img src="readme_images/volatility.png" alt="volatility" height="80px">
 </div>
 
-***Note:*** *Using log returns instead of simple returns as described above may work better statistically. Following is how you calculate a daily log return:*
+In this solution, I will use the **daily log returns** (as calculated below) instead of the above **simple returns** as those will work better statistically.
 
 <div align="center">
-  <img src="readme_images/log_return.png" alt="log return" height="55px">
+  <img src="readme_images/log_return.png" alt="log return" height="60px">
 </div>
 
-*There are three key reasons why log returns will make sense:*
+There are three key reasons why using the **daily log returns** make sense:
 
-***Reason 1 -*** *Log returns preserve total movement across a window exactly. For example, if a price moves +10% one day and -10% the next day, for a $100 stock, simple returns gives,* 
+***Reason 1 -*** Log returns preserve total movement across a window exactly. For example, if a price moves +10% one day and -10% the next day, for a $100 stock, simple returns give, 
 
-Total return: +0.10 - 0.10 = 0
+**Total return:** +0.10 - 0.10 = 0 (suggests there is no loss or gain)
 
-*However, the price movement is not flat:*
+However, the actual price movement is not flat:
 
-100 -> 110 -> 99
+$100 --(*10% gain*)--> $110 --(*10% loss*)--> $99 (final price is not back to $100)
 
-*If we look at the same change using log returns,*
+If we look at the same example using log returns, we can add the changes to calculate the true gain/loss as follows:
 
-Total return: ln(110/100) + ln(99/110) = ln(99/100)
+**Total return:** ln(110/100) + ln(99/110) = ln(99/100)
 
-*which means we can use them "additively".*
+***Reason 2 -*** Simple returns are NOT symmetrical while log returns are - due to the mathematical property of logarithms: ln(a) = -ln(1/a)
 
-***Reason 2 -*** *Simple returns are NOT symmetrical while log returns are - due to the mathematical property of logarithms: ln(a) = -ln(1/a)*
-
-*Consider a price that doubles first and then halves as follows:*
+For example, consider a price that doubles first and then halves as follows:
 
 100 -> 200 : *in simple returns this yields %100*  
 200 -> 100 : *in simple returns this yields -%50*
 
-*Even though the final price is still where it first started, the positive and negative returns are numerically NOT symmetrical!*
+Even though the final price is still where it first started, the positive and negative returns are numerically NOT symmetrical (i.e., +100% vs. -50%)!
 
-*Now in the case of the same example, when log returns are used instead:*
+Now for the same example, when log returns are used instead:
 
 100 -> 200 : *in log returns this yields +0.693*  
 200 -> 100 : *in log returns this yields -0.693*
 
-*which represents a symmetric change!*
+which now indicates a symmetric change around zero!
 
-*This is important because:*   
-- *Positive and negative moves contribute equally*
-- *Variance reflects true fluctuation magnitude*
-- *Distribution is closer to symmetric and stable*
+This is important because:
+- Positive and negative moves contribute equally
+- Variance reflects true fluctuation magnitude
+- Distribution is closer to symmetric and is stable
 
-***Reason 3 -*** *If your dataset includes stock tickers with very different price levels, using log returns will allow you to compare them.*
+***Reason 3 -*** If your dataset includes stock tickers with very different price levels, using log returns will allow you to compare them fairly and meaningfully.
 
 ***Key takeaway:** Volatility becomes a cleaner measure of "movement intensity" when log returns are used instead of simple returns!*
 
-***4. Zero-crossing rate (ZCR):*** The goal here is to quantify how often the 30-day series price changes direction (i.e., up -> down or down -> up). ZCR is a strong indicator of an oscillating pattern.
+***4. Zero-crossing rate (ZCR):*** The goal here is to quantify how often the 30-day series raw price changes direction (i.e., up -> down or down -> up). ZCR is a strong indicator of an oscillating pattern.
 
-Though the name suggests there is a negative to positive transition around zero, what is meant here is a "sign change" of how the price of a stock is moving. First, we calculate the price difference between two consecutive days (dt). If dt < 0, the price has decreased while dt > 0 indicates a price increase. In a 30-day frame, we can have 29 price differences at most.
+Though the name suggests there is a negative to positive transition around zero, what is meant here is a "sign change" of how the price of a stock is moving. First, I calculate the **raw price difference** between two consecutive days (dt). If dt < 0, the price has decreased while dt > 0 indicates a price increase. In a 30-day frame, we can have 29 price differences at most.
 
 The "sign change" refers to whether a positive or negative difference between successive differences is maintained over time. For example,
 
-daily prices:           x1, x2, x3, x4, x5, x6
-price differences:      x2-x1, x3-x2, x4-x3, x5-x4, x6-x5
-sign of differences:    s1 = sign(x2-x1), s2 = sign(x3-x2), s3 = sign(x4-x3), s4=sign(x5-x4), s5=sign(x6-x5)
-sign changes        :   s1 ?= s2, s2 ?= s3, s3 ?= s4, s4 ?= s5
+**daily prices:** x1, x2, x3, x4    
+**differences:** x2-x1, x3-x2, x4-x3  
+**sign of differences:** s1 = sign(x2-x1), s2 = sign(x3-x2), s3 = sign(x4-x3)  
+**sign changes:** (s1 ?= s2), (s2 ?= s3)  
 
-Therefore, for 'n' prices, we will calculate 'n-1' differences, and have a maximum of 'n-2' sign changes.
+Therefore, for 'n' prices, we will have 'n-1' price differences, and a maximum 'n-2' sign changes.
 
 We count the number of sign changes (i.e., zero crossing count) as follows:
 <div align="center">
-  <img src="readme_images/sign_change_count.png" alt="zero crossing count" height="50px">
+  <img src="readme_images/sign_change_count.png" alt="zero crossing count" height="65px">
 </div>
 
 Then we calculate the rate (i.e., ZCR) as follows:
 <div align="center">
-  <img src="readme_images/zero_crossing_rate.png" alt="zero crossing rate" height="50px">
+  <img src="readme_images/zero_crossing_rate.png" alt="zero crossing rate" height="60px">
 </div>
 
-z=0 means the price trend never changes direction while z=1 means the price trend direction changes each day (highly oscillatory)
+z=0 means the price trend never changes direction while z=1 means the price trend direction changes each day (indicating a highly oscillatory behavior)
 
-***Note:*** *If price does not change from one day to the next, the sign() will indicate 0. As a result, calculating a sign difference will not be possible. For such cases, ignoring the transitions involving 0 will make sense. This will be equivalent to dropping day transitions where price difference is zero.*  
-*An alternative (and a better) method is to replace the "no sign change" element to the sign of the previous comparison. That way no elements will be dropped and therefore the zero crossing ratio will always be calculated the same denominator (i.e., N-2)*
+***Practical Tip:*** *If price does not change from one day to the next, the sign() will indicate 0. As a result, calculating a sign difference will not be possible.*
 
-### Calculation of thresholds:
+*For such cases, ignoring the transitions involving 0 is an obvious approach. This will be equivalent to dropping day transitions where price difference is zero.*
+
+*However, an alternative method I use is to replace the "no sign change" element to the sign of the previous change. That way no elements will be dropped and therefore the zero crossing ratio will always be calculated the same denominator (i.e., N-2)*
+
+### Calculation of "the golden" thresholds:
 Now that we covered the metrics that will be used in defining our ground truth for the classification task, next we need to define (or compute) a few thresholds for those metrics to decide on how to classify each 30-day frame in our dataset.
 
-While defining these thresholds one thing we need to watch out for is ***not to make them dependent on the dataset*** by, for example, defining percentiles computed using the entire dataset! This approach would jeopardize the generalizability of our models as the percentile based thresholds are unlikely to be valid for future unseen data. Therefore, our threshold definitions will be based on daily price changes and/or each 30-day frame. We will also use empirical approaches based on human visual perception while defining these thresholds. Obviously, the intuitive thresholds chosen can always be changed later, if needed, to improve performance.
+The reason why these thresholds are ***"golden"*** is because they are used in generating the ground truth labels for my dataset as will be described shortly.
 
-Before describing the thresholds, let's talk about the slope magnitude |b| and the regions where that value might fall in our dataset. There are three regions we need to keep in mind when working with |b| as shown below defined by two thresholds y1 and y2.
+While defining these thresholds one thing I had to watch out for was ***not to make them dependent on the dataset*** by, for example, defining percentiles computed using the entire dataset! This approach would jeopardize the generalizability of models as the percentile based thresholds are unlikely to be valid for future unseen data. Therefore, my threshold definitions are based on daily price changes and/or each 30-day frame. I also used empirical approaches based on human visual perception while defining these thresholds. Obviously, the intuitive thresholds chosen can always be changed later, if needed, to improve performance.
+
+Before describing the thresholds, let's talk about the slope magnitude |b| and the regions where it may fall in our dataset. There are three regions we need to keep in mind when working with |b| as shown below defined by the two thresholds y1 and y2.
 
 <div align="center">
   <img src="readme_images/trend_regions.png" alt="trend regions" height="250px">
 </div>
 
-When a calculated |b| exceeds y2, it indicates a strong trend, which means the slope strongly moves upwards or downwards (depending on the sign of the slope)
+When |b| exceeds y2, it indicates a strong trend, which means the slope strongly moves upwards or downwards (depending on the sign of the slope)
 
 When |b| is below threshold y1, it means there is no strong upward or downward trend and the slope indicates a flat line (which basically means the price over the 30-day period is almost flat)
 
@@ -200,20 +204,20 @@ In order to see how much a price changes from one day (t) to the next (t+1), we 
   <img src="readme_images/daily_price_change.png" alt="price change" height="55px">
 </div>
 
-Since we are trying to define a threshold for slope b, where small negative or positive slopes will need to be somehow defined, the following identity that is true for small b values can be used.
+Since we are trying to define a threshold for slope b, where small negative or positive slopes will need to be somehow defined, the following identity (true for small b values) can be used.
 
 <div align="center">
   <img src="readme_images/small_exp_identity.png" alt="small exp identity" height="30px">
 </div>
 
-This means when log prices are used, ***slope b is an approximation of percentage price growth per day*** over a 30-day frame!
+This means when log prices are used, ***slope b is an approximation of percentage price growth per day*** based on a 30-day frame!
 
 Empirically, when the broad US equity universe is considered, **daily drift/change (magnitude) above ~0.3% is considered trend-dominant.** This means we can define the following thresholds to categorize strong upward/downwad trends:
 
-b(up) >= 0.003 *(to check strong upward trend)*
-b(up) <= -0.003 *(to check strong downward trend)*
+b(up) >= 0.003 ***(strong upward trend condition)***  
+b(down) <= -0.003 ***(strong downward trend condition)***
 
-Note we are able to define the threshold symmetrically because log-price slopes are symmetric! (i.e., +1%/day and -1%/day represent equivalent strength in opposite directions!)
+Note we are able to define the threshold symmetrically because log-price slopes are symmetric! (*i.e., +1%/day and -1%/day represent equivalent strength in opposite directions!*)
 
 
 ***2. Near-zero slope threshold:*** This threshold is the level below which a daily drift direction becomes visually and statistically indistinguishable from noise over a 30-day window.
@@ -228,12 +232,12 @@ Following is how we calculate the near-zero slope threshold, which indicates fla
 
 To sum up,
 
-|b| <= 0.001 *indicates a near-zero slope, i.e. a flat window*  
-|b| > 0.001 *indicates a non-flat window*
+|b| <= 0.001 ***indicates a near-zero slope, i.e. a flat window***  
+|b| > 0.001 ***indicates a non-flat window***
 
-For clarification, any |b| that falls between 0.001 and 0.003 indicates a movement in the drift region as I described in an earlier plot. 30-day frames that fall into this drift region will be classified as OTHER as we will see later in the label mapping section.
+For clarification, any |b| that falls between 0.001 and 0.003 indicates a movement in the drift region as I described on an earlier plot. 30-day frames that fall into this drift region will be classified as OTHER as we will see later in the label mapping section.
 
-***3. Trend strength (TS) threshold:*** Previously, I showed how to calculate TS as a ratio of daily drift and the daily movement. We can interpret TS as a "daily signal-to-noise" ration (SNR) as well to help us calculate a reasonable threshold. Let's first derive the equation that will help us define a reasonable threshold based on SNR.
+***3. Trend strength (TS) threshold:*** Previously, I showed how to calculate TS as a ratio of daily drift and the daily movement. We can interpret TS as a "daily signal-to-noise" ratio (SNR) as well to help us calculate a reasonable threshold. Let's first derive the equation that will help us define a reasonable threshold based on SNR.
 
 <div align="center">
   <img src="readme_images/trend_strength_snr.png" alt="trend strength snr" height="150px">
@@ -247,15 +251,15 @@ As the next step, we simply plug in N=30 since we are interested in 30-day windo
   <img src="readme_images/trend_strength_snr_2.png" alt="trend strength snr 2" height="50px">
 </div>
 
-While there are different SNR values we can pick to help us define a reasonable threshold for TS, we need to make sure the directional displacement (indicated by |b|) is visually stable and discernible compared to the random fluctuation (i.e., the standard deviation term - volatility) If the directional displacement is twice as large as the random fluctuation, this will provide a measure that allows humans to recognize a trend in the data. Any SNR lower than 2 typically gives ambiguous shapes caused by sign and magnitude ambiguities. Therefore, as the final step in our formulation, we have:
+While there are different SNR values we can pick to help us define a reasonable threshold for TS, we need to make sure the directional displacement (indicated by |b|) is visually stable and discernible compared to the random fluctuation (i.e., the standard deviation term - volatility) If the directional displacement is twice as large as the random fluctuation, this will provide a measure that will allow human eye to recognize a trend in the data. Any SNR lower than 2 typically gives ambiguous shapes caused by sign and magnitude ambiguities. Therefore, as the final step in our formulation, we have:
 
 <div align="center">
   <img src="readme_images/trend_strength_snr_3.png" alt="trend strength snr 3" height="100px">
 </div>
 
 We can now finalize our threshold for trend strength as:  
-TS >= 0.36 *indicates a strong upward or downward trend*  
-TS < 0.36 *indicates a weak/no trend*
+TS >= 0.36 ***indicates a strong upward or downward trend***  
+TS < 0.36 ***indicates a weak/no trend***
 
 ***4. Oscillation threshold:*** In order to calculate this threshold, we need to use the binomial tail probability.
 
@@ -277,7 +281,7 @@ Note the above equation calculates the probability for a 'k' value we fix as the
 
 In the updated version, we are now considering a minimum value 'k' as well as higher number of sign changes up to a maximum of "n". As a result, our probability calculation becomes a *sum of independent probabilities*.
 
-The last probability calculation is the *false positive rate* of accidentally categorizing a trend window as oscillatory, which is something we want to minimize, obviously. Therefore, we use the following inequality where a false positive probability (p(fp)) is also included.
+The last probability calculation is the *false positive rate* of accidentally categorizing a trend window as oscillatory, which is something we want to minimize. Therefore, we use the following inequality where a false positive probability (p(fp)) is also included.
 
 <div align="center">
   <img src="readme_images/binomial_probability_3.png" alt="binomial probability 3" height="50px">
@@ -285,7 +289,7 @@ The last probability calculation is the *false positive rate* of accidentally ca
 
 Let's now pick reasonable values for some of the parameters to create the inequality we will solve to compute the oscillation threshold we will use to define our classification.
 
-The maximum number of sign changes that can occur in a 30-day window is 30-2=28, as we also calculated earlier. The success probability refers to the expected level of sign changes in a valid trend window, which we should set at a low level (since by definition a trend window should have good sign stability). Success probability of 0.3 is a reasonable level that is neither overconstraining nor too relaxed. Last but not least, we need to define a false positive rate that is low enough to accurately classify the oscillatory frames. Let's set the false positive rate to 5% with that in mind.
+The maximum number of sign changes that can occur in a 30-day window is 30-2=28, as we also calculated earlier. The success probability refers to the expected level of sign changes in a valid trend window, which we should set at a low level (*since by definition a trend window should have good sign stability*). Success probability of 0.3 is a reasonable level that is neither overconstraining nor too relaxed. Last but not least, we also need to define a false positive rate that is low enough to accurately classify the oscillatory frames. Let's set the false positive rate to 5% with that in mind.
 
 When we plug in the above values to the last inequality I listed, following is what we need to solve to identify the threshold we are after.
 
@@ -324,11 +328,11 @@ When you call the *false_positive_rate()* function with the default arguments, y
 
 To sum up, 30-day frames where we observe sign changes of 13 or more will be categorized as oscillatory. In other words, if **ZCR >= 13/28 (~0.46), a 30-day frame will be indicated to have strong oscillation.**
 
-***OPTIONAL STATISTICS FOR THE CURIOUS MINDS***: Though we have calculated our zero crossing threshold already, I would like to share an alternative calculation method using the relationship between binomial distribution and normal distribution, which will simplify our calculations with a few approximations. You will see this alternative method will also provide the same k value.
+***ADDITIONAL STATISTICAL VERIFICATION OF k=13***: Though we have calculated our zero crossing threshold already, I would like to share an alternative calculation method using the relationship between binomial distribution and normal distribution, which will simplify our calculations with a few approximations. You will see this alternative method will also confirm the same k value.
 
 A Bernoulli random variable represents a single trial with exactly two outcomes: success (often coded as 1) and failure (often coded as 0). A binomial variable is the sum of n independent Bernoulli variables. The central limit theorem tells us the sum of many independent, and identically distributed variables tends toward a normal distribution, **regardless of the original variable's distribution**.
 
-Therefore, a binomial distribution can be approximated to a normal distribution under certain conditions, i.e., when the binomial distribution is not too skewed!
+Therefore, a binomial distribution can be approximated to a normal distribution under certain conditions, *i.e., when the binomial distribution is not too skewed!*
 
 A practical rule when a binomial distribution can be approximated to a normal distribution is:
 
@@ -344,7 +348,7 @@ The interpretation of the above rule is as follows:
 
 For our particular case where n=28 and p=0.3,
 
-np = 8.4 and n(1-p)=19.6, which satisfy the looser criterion. So considering the normal distribution approximation as alternative makes sense.
+np = 8.4 and n(1-p)=19.6, which satisfy the looser criterion. So considering the normal distribution approximation as alternative makes sense in our specific case.
 
 We first need to calculate the mean and the variance to characterize our approximated normal distribution. Let's first calculate the mean and variance for a single Bernoulli random variable and then generalize it to the binomial distribution, which is really easy.
 
@@ -404,7 +408,7 @@ Before calculating k, we need to talk about the *"continuity correction"* since 
 
 The best way to interpret the above is to think about the discrete value k as a point in the middle of a bar on a chart extending from k-0.5 to k+0.5. Therefore, for a discrete variable to be greater than or equal to k simply means its continuous version needs to be greater than or equal to k-0.5 to improve accuracy.
 
-So we replace the k term in the previous normalization expression to (k-0.5) as follows.
+So we replace the k term in the previous normalization expression with (k-0.5) as follows.
 
 <div align="center">
   <img src="readme_images/mean_variance_8.png" alt="mean and variance 8" height="80px">
@@ -449,49 +453,53 @@ Similarly, for the noisy region where the volatility is high, we need to select 
 </div>
 
 Therefore, the two sigma thresholds we will use are:  
-v(low) <= 0.008 *low volatility, stationary window*  
-v(high) >= 0.02 *high volatility, no trend window*
+v(low) <= 0.008 ***low volatility, stationary window***  
+v(high) >= 0.02 ***high volatility, no trend window***
 
-It follows that any sigma that falls between the above two thresholds is considered to be the typical regime (i.e., the medium volatility band)
+It follows that any sigma that falls between the above two thresholds is considered to be the typical regime (*i.e., the medium volatility band*)
 
 
 ### Labeling rules:
-We now have all of our definitions and criteria to create our labeling rules for generating ground truth data for all of our dataset.
+We now have all of our *"golden threshold definitions"* to create our labeling rules for generating ground truth data for all of our dataset.
 
-We need to apply the following 5 rules in the listed order to successfully create all of the labels for our dataset.
+We need to apply the following 5 rules ***in the listed order*** to successfully create all of the labels for our dataset.
 
-> ***Rule 1*** - STATIONARY  class
-> A frame is classified as STATIONARY if it is both flat and quiet.  
+> ***Rule 1 - STATIONARY  class:***
+> A frame is classified as STATIONARY if it is both flat and quiet.
+
 > *Criteria:*  
 > - |b| < 0.001  i.e., flat/near flat characteristic  
 > - AND v <= 0.008  i.e., low volatility, v(low)  
 > - AND z < 0.46  i.e., weak/no oscillations  
 
-> ***Rule 2*** - OSCILLATING class
+> ***Rule 2 - OSCILLATING class:***
 > A frame is classified as OSCILLATING if it flips direction frequently and does not have a strong trend.  
+
 > *Criteria:*    
 > - z >= 0.46  i.e., strong oscillations  
 > - AND ts < 0.36 i.e., no strong trend
-> - AND v > 0.008 i.e., above the low volatility threshold to ignore tiny jitters as oscillations.
+> - AND v > 0.008 i.e., above the low volatility threshold to ignore tiny jitters as oscillations. Medium oscillations are also counted here.
 
-> ***Rule 3*** - TREND_UP class
+> ***Rule 3 - TREND_UP class:***
 > A frame is classified as TREND_UP if it has a positive slope and trend dominates noise.  
+
 > *Criteria:*    
 > - b >= 0.003  i.e., strong positive slope  
 > - AND ts >= 0.36 i.e., strong trend
 > - AND z < 0.46 i.e., guard against oscillatory frames  
-> - AND v < 0.02  i.e., guard against very noisy "trends"   
+> - AND v < 0.02  i.e., guard against very noisy "trends". Medium volatility is ignored in order not to miss trends with some fluctuation.   
 
-> ***Rule 4*** - TREND_DOWN class
+> ***Rule 4 - TREND_DOWN class:***
 > A frame is classified as TREND_DOWN if it has a negative slope and trend dominates noise.  
+
 > *Criteria:*    
 > - b <= -0.003  i.e., strong negative slope  
 > - AND ts >= 0.36 i.e., strong trend
 > - AND z < 0.46 i.e., guard against oscillatory frames  
-> - AND v <0.02  i.e., guard against very noisy "trends"   
+> - AND v < 0.02  i.e., guard against very noisy "trends". Medium volatility is ignored in order not to miss trends with some fluctuation.   
 
-> ***Rule 5*** - OTHER class
-> If a frame does not satisfy any of the above 4 rules, it is classified as OTHER. This class should collect the following cases:  
+> ***Rule 5 - OTHER class:***
+> If a frame does not fall into any of the above 4 classes, it is classified as OTHER. This class should capture the following cases:  
 > - moderate slopes *(i.e., not extreme enough for trends)*
 > - moderate volatility with low/medium zero crossings
 > - mixed behavior *(i.e., trend + oscillations)*
@@ -502,9 +510,9 @@ We need to apply the following 5 rules in the listed order to successfully creat
 #### The Raw Data: ####
 Entire dataset is kept in one folder called ***stock_datalake***. This folder will contain raw data in multiple csv files spanning the same time period for multiple stock tickers. The data lake will include the complete OHLCV data for the selected stocks and will be (typically) constructed once in order to avoid repetitive web calls to capture the complete data required for an analysis.
 
-Any feature engineering and train/validation/test splits will be generated using this raw data.
+Any feature engineering and train/validation/test splits will be generated using this raw data lake.
 
-Each csv file (for a stock ticker) will include all of the days within a "start date" and an "end data". Each row will correspond to a day's OHLCV data. Each csv file name will be of the following format and will include a descriptive header row:
+Each csv file (for a stock ticker) will include all of the days between a "start date" and an "end date". Each row will correspond to a day's OHLCV data. Each csv file name will be of the following format and will include a descriptive header row:
 
 **`<ticker name>_<start date yyyymmdd>_<end date yyyymmdd>.csv`**
 
@@ -526,12 +534,12 @@ The ***stock_datalake*** will also include a json file (called ***metadata.json*
 
 We will have one csv file that will include all the stock tickers in the raw data and the features generated from the OHLCV data (as described earlier).
 
-This csv file will be called **feature_dataset.csv** and will include the following column names:
+This csv file will be called the **feature_dataset.csv** and will include the following column names:
 
 **'ticker':** Name of the stock ticker  
-**'end_date':** Last date of the 30-day profile used for calculating the features in YYYMMDD format  
-**'b':** Slope of the log prices  
-**'zcr':** Zero crossing rate (log-return based sign changes)  
+**'end_date':** Last date of the 30-day profile used for calculating the features in YYYMMDD format as an ***integer***  
+**'b':** Slope of the log prices line for a 30-day window  
+**'zcr':** Zero crossing rate (raw price based sign changes)  
 **'v':** Daily volatility  
 **'ts':** Trend strength  
 **'gt':** Ground truth label  
@@ -546,8 +554,8 @@ In order to avoid future leakage, use the following suggestion **for each ticker
 
 Once we have the above split that adheres the described temporality for each stock ticker, data in each split can be mixed as far as different tickers are concerned as this is not going to cause a future leakage.  
 
-You may be wondering in the real-world, stock movements may be correlated and mixing them within the same split may cause future leakage. However, we must remember that "correlation is not leakage". A training sample leaks ***if it uses information that would not be available when making the prediction*** for a test sample. Since in our split approach we clearly isolated the future data from the past data, we are avoiding any leakage.
+You may be wondering in the real-world, stock movements may be correlated and mixing them within the same split may cause future leakage. However, we must remember that "correlation is not leakage". A training sample leaks ***if it uses information that would not be available when making the prediction*** for a test sample. Since in our split approach we clearly isolated the future data (testing only) from the past data (training only), we are avoiding any leakage.
 
-Note the split recommendation also avoids using validation data that is newer than the test data. If this was not the case, this would not be a leakage and would not invalidate our approach here. However, following the temporality convention for the validation and test splits aligns with how the model will be used (as validation is often used as a proxy for test/future performance). Therefore, for clarity and realism, I enforce train-validation-test temporal ordering in my solution.
+Note the split recommendation also avoids using validation data that is newer than the test data. If this was not the case, this would not be a leakage and would not invalidate our approach here. However, following the temporality convention for the validation and test splits aligns with how the model will be used (*as validation is often used as a proxy for test/future performance*). Therefore, for clarity and realism, I enforce train-validation-test temporal ordering in my solution.
 
 ***IN SUMMARY:*** Although shuffling the tickers within each split does not matter for the ML model for training, validation and testing, making sure, *for a given ticker*, no part of data used in training is newer than any part of data used for validation or testing is critically important. Similarly, the validation data must also be older than the test data. This is because there is a temporal relationship between the features generated for each stock ticker, which must be respected at all times.
