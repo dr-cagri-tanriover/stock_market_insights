@@ -861,10 +861,53 @@ class DataInsights:
     def stress_test_splits_analysis(self, feature_dict: dict, class_column: str, save_folder: str, enable_pdf_write: bool = True):
 
    
-        self._year_regime_transfer_tests(feature_dict, class_column, save_folder, enable_pdf_write)
+        self._year_regime_transfer_tests(feature_dict, class_column, save_folder, enable_pdf_write = enable_pdf_write)
 
-        #self._leave_one_ticker_out_tests()
+        self._leave_one_ticker_out_tests(feature_dict, class_column, save_folder, enable_pdf_write = enable_pdf_write)
         
+
+    def _leave_one_ticker_out_tests(self, feature_dict: dict, class_column: str, save_folder: str, enable_pdf_write: bool = True):
+        """
+        This is a simple leave-one-ticker-out test.
+        """
+
+        start_year, end_year = (2014, 2024)  # Applies to all tickers
+        get_year = lambda intTimestamp: datetime.strptime(str(intTimestamp), '%Y%m%d').year  # helper lambda function to get the year from the dataset 'end_date'
+
+
+        tickers = list(self.df['ticker'].unique())
+
+        for heldoutTicker in tickers:
+            # Get data for the hold out set only for the time window.
+            heldoutDf = self.df[(self.df['ticker'] == heldoutTicker) & (self.df['end_date'].apply(get_year) >= start_year) & (self.df['end_date'].apply(get_year) <= end_year)]
+            # Get data for the remaining tickers in the same time window.
+            trainDf = self.df[(self.df['ticker'] != heldoutTicker) & (self.df['end_date'].apply(get_year) >= start_year) & (self.df['end_date'].apply(get_year) <= end_year)]
+
+            # Fit thresholds for the train dataframe
+            thresholds = self._fit_thresholds(trainDf)
+
+            # Predict labels for the test dataframe
+            y_true, y_pred = self._predict_labels(heldoutDf, thresholds, class_column)
+
+            # Evaluate the classifier
+            acc_val, report_df, conf_matrix = self._evaluate_classifier(y_true, y_pred, class_column)
+
+            # Report the results
+            message = f"Stress-tests > Leave-one-ticker-out (LOTO): Ticker held out: {heldoutTicker}, time window: [{start_year},{end_year}]"
+            print(f"{message}")
+            prt.print_dataframe(report_df, justify_numeric="center")
+            print(f"Accuracy: {acc_val:.2%}")
+
+            self.reportObj.new_page(enable_write=enable_pdf_write)
+
+            self.reportObj.print(rprt.ReportDataType.HEADING_2, message)
+            self.reportObj.print_dataframe_as_table(conf_matrix, font_size=8)
+            self.reportObj.print(rprt.ReportDataType.BODY, f"\n\n")
+
+            self.reportObj.print_dataframe_as_table(report_df)
+            self.reportObj.print(rprt.ReportDataType.BODY, f"\n\n")
+            self.reportObj.print(rprt.ReportDataType.BODY, f"Accuracy: {acc_val:.2%}")
+
 
     def _year_regime_transfer_tests(self, feature_dict: dict, class_column: str, save_folder: str, enable_pdf_write: bool = True):
 
@@ -1015,14 +1058,14 @@ class DataInsights:
         # Availability of classes in y_pred and y_true need to be checked as part of the classifier evaluation.
         all_classes = self.df[class_column].unique()  # capturing all unique classes from the original dataset
 
-        missing_classes_in_true = [each_class for each_class in all_classes if each_class not in y_true.unique()]
-        missing_classes_in_pred = [each_class for each_class in all_classes if each_class not in y_pred.unique()]
+        missing_classes_in_rows = [each_class for each_class in all_classes if each_class not in y_true.unique()]
+        missing_classes_in_cols = [each_class for each_class in all_classes if each_class not in y_pred.unique()]
 
         cm = pd.crosstab(y_true, y_pred)
 
-        if len(missing_classes_in_true) > 0 or len(missing_classes_in_pred) > 0:
+        if len(missing_classes_in_rows) > 0 or len(missing_classes_in_cols) > 0:
         # Confusion matrix needs manual adjustment to maintain the expected symmetry.
-            cm = self._fix_confusion_matrix(cm, missing_classes_in_true, missing_classes_in_pred)
+            cm = self._fix_confusion_matrix(cm, missing_classes_in_rows, missing_classes_in_cols)
             
         cm.index = [f"gt({idx})" for idx in cm.index]
         cm.columns = [f"pred({col})" for col in cm.columns]
@@ -1073,63 +1116,65 @@ class DataInsights:
         return report_df
 
 
-    def _fix_confusion_matrix(self, cm: pd.DataFrame, missing_classes_in_true: list, missing_classes_in_pred: list) -> pd.DataFrame:
+    def _fix_confusion_matrix(self, cm: pd.DataFrame, missing_classes_in_rows: list, missing_classes_in_cols: list) -> pd.DataFrame:
 
         # Create a list of all missing classes along rows and columns.
-        missing_set = set(missing_classes_in_true + missing_classes_in_pred)  # this will include unique missing classes.
+        missing_set = set(missing_classes_in_rows + missing_classes_in_cols)  # this will include unique missing classes.
 
         # Identify the shortest dimension in cm.
         rows, cols = cm.shape
 
         if rows < cols:
             # There are more columns than rows in the confusion matrix.
-            # Add the classes in COLUMNS to the missing locations in the ROWS until the length if rows and columns are equal.
-            start_col_idx = len(cm.index)  # start index is where the row index ends
-            end_col_idx = len(cm.columns)  # end index is where the columns end
+            # IMPORTANT: When row and column lengths do not match, order of the existing row and columns may mismatch !!! DO NOT ASSUME THEY ARE IN ORDER !!!
 
-            classes_to_add = cm.columns[start_col_idx:end_col_idx]  # these are the classes the rows are missing (order maintained here!)
-
-            for each_class in classes_to_add:
-                cm.loc[each_class,:] = 0  # populates a complete new row with the index name.
+            # Step 1 - Create a new dataframe with the COLUMN names in cm as row and column names in new_cm dataframe.
+            # This ensures the row and column name will be in the same order at all times!
+            new_cm = pd.DataFrame(0, index=cm.columns, columns=cm.columns)  # All cells = 0 upon creation
+            
+            # Step 2 - Add the existing row data in cm to the respective row in new_cm dataframe.
+            for each_row in cm.index:
+                new_cm.loc[each_row,:] = cm.loc[each_row,:]
 
             # Number of rows and columns and their names are now the same at this point
-            # Scan for the missing_set will be executed later.
+            # Scan for the missing_set will be executed below.
 
         elif rows > cols:
             # There are more rows than columns in the confusion matrix.
-            # Add the classes in ROWS to the missing locations in the COLUMNS until the length if rows and columns are equal.
-            start_row_idx = len(cm.columns)  # start index is where the column index ends
-            end_row_idx = len(cm.index)  # end index is where the rows end
+            # IMPORTANT: When row and column lengths do not match, order of the existing row and columns may mismatch !!! DO NOT ASSUME THEY ARE IN ORDER !!!
 
-            classes_to_add = cm.index[start_row_idx:end_row_idx]  # these are the classes the columns are missing (order maintained here!)
-
-            for each_class in classes_to_add:
-                cm.loc[:,each_class] = 0  # populates a complete new column with the index name.
+            # Step 1 - Create a new dataframe with the ROW names in cm as row and column names in new_cm dataframe.
+            # This ensures the row and column name will be in the same order at all times!
+            new_cm = pd.DataFrame(0, index=cm.index, columns=cm.index)  # All cells = 0 upon creation
+            
+            # Step 2 - Add the existing column data in cm to the respective column in new_cm dataframe.
+            for each_col in cm.columns:
+                new_cm.loc[:, each_col] = cm.loc[:, each_col]
 
             # Number of rows and columns and their names are now the same at this point
-            # Scan for the missing_set will be executed later.
+            # Scan for the missing_set will be executed below.
         else:
             # Rows and columns are already the same length. No need to do anything.
             print(f"Rows and columns are already the same length. Checking for any missing classes in the set.")
+            new_cm = cm  # new_cm points to cm to reference the original confusion matrix as is.
 
-
-        # At this point, the length of the columnsa and the rows MUST be identical (as well as their names!)
+        # At this point, the length of the columnsa and the rows in new_cm MUST be identical (as well as their names!)
         # Then scan the missing_set and add any missing common classes to both the rows and columns to complete.
-        rows, cols = cm.shape  # Recapture the shape of the matrix in case any row or columns have changed so far.
+        rows, cols = new_cm.shape  # Recapture the shape of the matrix in case any row or columns have changed so far.
 
         if rows != cols:
             raise ValueError(f"Rows and columns lengths are not the same in the confusion matrix. Rows: {rows}, Columns: {cols}")
 
-        classes_to_add = missing_set.difference(set(cm.columns))  # classes in missing_set that are NOT in columns (or rows)
+        classes_to_add = missing_set.difference(set(new_cm.columns))  # classes in missing_set that are NOT in columns (or rows)
         if len(classes_to_add) > 0:
             # There are classes to add to cm.
             # insert each missing class in missing_set into respective rows and columns of the confusion matrix.
             for each_class in classes_to_add:
-                cm.loc[each_class, each_class] = 0  # populates the intersection cell value only but NaNs the remaining new elements
-                cm.loc[each_class, :] = 0  # populates the entire new row with 0
-                cm.loc[:, each_class] = 0  # populates the entire new column with 0
+                new_cm.loc[each_class, each_class] = 0  # populates the intersection cell value only but NaNs the remaining new elements
+                new_cm.loc[each_class, :] = 0  # populates the entire new row with 0
+                new_cm.loc[:, each_class] = 0  # populates the entire new column with 0
 
-        return cm.astype('int64')  # convert the confusion matrix to integer type for pretty printing later
+        return new_cm.astype('int64')  # convert the confusion matrix to integer type for pretty printing later
     
   
 

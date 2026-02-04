@@ -87,7 +87,6 @@ def get_feature_dataset_insights():
                                  #'sliding_months': 12 # determines the sliding window size for the analysis in units of months. For future use.
                                  }
 
-
     dsObj.confusion_risk_analysis(features_to_plot, class_column='gt', save_folder="plots", display_plots=False)
 
     dsObj.temporal_stability_analysis(temporal_stability_params, class_column='gt', save_folder="plots")
