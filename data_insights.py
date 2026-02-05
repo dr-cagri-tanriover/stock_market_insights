@@ -30,7 +30,7 @@ def print_line(func_name: str):
 class DataInsights:
 
     @print_divider("INITIALIZING DATA INSIGHTS OBJECT")
-    def __init__(self, path: str | Path, reportout_filepath: Path, pdf_report_title: str):
+    def __init__(self, dataset_filepath: Path, reportout_filepath: Path, pdf_report_title: str, datalake_filepath: Path = None):
         self.df = pd.DataFrame()
                 
         self.reportObj = rprt.reporter(report_filepath=reportout_filepath,
@@ -41,14 +41,16 @@ class DataInsights:
         self.pdf_report_title = pdf_report_title
 
         try:
-            self.df = pd.read_csv(path)
+            self.df = pd.read_csv(dataset_filepath)
             print(f"Data loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
         except FileNotFoundError:
-            print(f"File not found: {path}")
+            print(f"File not found: {dataset_filepath}")
             raise
         except Exception as e:
             print(f"Error loading data: {e}")
             raise
+
+        self.datalake_filepath = datalake_filepath  # Depending on the nature of the analysis, this path may not always be needed.
 
 
     def end_operation(self):
@@ -845,7 +847,9 @@ class DataInsights:
 
     def _save_plot(self, figure: plt.figure, filename: str, save_folder: str, pdf_page_title: str = None, enable_pdf_write: bool = True):
                             # Save the plot if filepath is provided
+
         save_path = Path(save_folder)  / filename
+        
         # Create directory if it doesn't exist
         save_path.parent.mkdir(parents=True, exist_ok=True)
         # Save the figure
@@ -1795,6 +1799,41 @@ class DataInsights:
             return f"0000-0000"
 
         return f"{era_start}-{era_end}"
+
+
+    def plot_price_pattern(self, priceDf, ticker, target_class, sample_end_date, analysis_attributes):
+        """
+        Plot the price pattern for a given ticker, target class and sample end date.
+        """
+        # Sort by Date so the plot is chronological (matplotlib plots in row order; it does not sort).
+        # Without this, x/y would follow buffer order, which can look like "y sorted" if dates were out of order.
+        plotDf = priceDf.copy()
+        plotDf['Date'] = pd.to_datetime(plotDf['Date'])
+        plotDf = plotDf.sort_values('Date').reset_index(drop=True)
+        start_date = plotDf['Date'].min().strftime('%Y-%m-%d')
+        end_date = plotDf['Date'].max().strftime('%Y-%m-%d')
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(plotDf['Date'], plotDf['Close'])
+        ax.set_xlabel('Date (YYYY-MM-DD)')
+        ax.set_ylabel('Adjusted Close Price ($)')
+        ax.set_title(f'Price regime {target_class} for {ticker} between [{start_date},{end_date}]')
+        ax.grid(True, alpha=0.5, linestyle='--')
+        plt.tight_layout()
+
+        analysis_attributes['reportout_filepath'] = Path("price_patterns.pdf")  # pdf file name for writing the results of the analysis.
+        analysis_attributes['pdf_report_title'] = "SELECTED PRICE PATTERNS"  # Title of insights analysis report
+        analysis_attributes['plot_save_folder'] = Path("plots")  # folder to save the plots
+
+        # Save the plot
+        plot_ref = f"{target_class}_{ticker}_{sample_end_date}"
+        filename = f'price_pattern_{plot_ref}.png'
+        self._save_plot(figure=fig,
+                        filename=filename,
+                        save_folder=analysis_attributes['plot_save_folder'],
+                        pdf_page_title=f"PRICE PATTERN: {plot_ref}",
+                        enable_pdf_write=True
+                        )
 
 
     def _enable_interactive_plots(self):

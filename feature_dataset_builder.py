@@ -8,6 +8,9 @@ from datetime import datetime, timedelta
 from typing import Any, List, Union, Optional, Dict
 from pathlib import Path
 
+import utils.fileops as fops  # file operations tools
+
+
 class FeatureDatasetBuilder:
     def __init__(self, raw_data_folder: str, metadata_file: str, feature_dataset_filename: str, days_per_feature: int):
         self.raw_data_folder = raw_data_folder
@@ -34,6 +37,11 @@ class FeatureDatasetBuilder:
         Returns:
             Dictionary containing metadata, or None if dataset hasn't been built yet
         """
+
+        if self.metadata is None:
+            self.metadata = fops.read_json_content(self.raw_data_folder, self.metadata_file)
+
+        """
         if self.metadata is None:
             raw_data_path = Path(self.raw_data_folder)
             metadata_path = raw_data_path / self.metadata_file
@@ -41,36 +49,10 @@ class FeatureDatasetBuilder:
                 with open(metadata_path, 'r') as f:
                     self.metadata = json.load(f)
             else:
-                raise FileNotFoundError(f"Metadata file {self.metadata_file} not found in {self.raw_data_folder}")
+                raise FileNotFoundError(f"Metadata file {self.metadata_file} not found in {self.raw_data_folder}")      
+        """
 
 
-    def yield_csv_rows(self, csv_filepath: Union[str, Path]):
-        """
-        Generator method that yields one row at a time from a CSV file.
-        Reads directly from file without loading entire file into memory.
-        
-        Args:
-            csv_filepath: Path to the CSV file (str or Path object)
-            
-        Yields:
-            dict: One row from the CSV file per call as a dictionary with column names as keys
-            
-        Example:
-            >>> builder = FeatureDatasetBuilder(...)
-            >>> for row in builder.yield_csv_rows('data.csv'):
-            ...     print(row)  # row is a dict like {'Date': '20240101', 'Open': 100, ...}
-        """
-        csv_path = Path(csv_filepath) if isinstance(csv_filepath, str) else csv_filepath
-        
-        if not csv_path.exists():
-            raise FileNotFoundError(f"CSV file not found: {csv_path}")
-        
-        # Read CSV row by row using csv.DictReader (memory efficient)
-        with open(csv_path, 'r', newline='') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                yield row
-    
     def build_feature_dataset(self):
         self.get_metadata()  # get the details of the raw dataset we will be using to build the feature dataset
        
@@ -110,7 +92,7 @@ class FeatureDatasetBuilder:
                 )
 
             rows_to_fill = self.days_per_feature
-            for each_row in self.yield_csv_rows(csv_filepath):
+            for each_row in fops.yield_csv_rows(csv_filepath):
                 # Process each row here
                 days_counter += 1
 
