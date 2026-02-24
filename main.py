@@ -7,6 +7,7 @@ import numpy as np
 
 import data_insights as di
 import utils.fileops as fops  # file operations tools
+import model_dev_eval as mde  # entry point to ML model development and evaluation
 
 
 def run_datalake_builder():
@@ -177,7 +178,7 @@ def main():
         'build_feature_dataset': "Create a feature dataset from the data lake by computing features for specified time frame in terms of days.",
         'get_data_insights': "Get insights from the feature dataset by applying a series of analyses and visualizations.",
         'price_pattern_analysis': "Analyze the raw price patterns of the stocks in the dataset to identify any interesting patterns.",
-        'train_model': "Train a machine learning model on the feature dataset and evaluate its performance."
+        'model_dev_eval': "Train a machine learning model on the feature dataset and evaluate its performance."
     }
 
     analysis_attributes = {
@@ -189,7 +190,7 @@ def main():
     }
 
 
-    MODE = 'price_pattern_analysis'  # select key from operation_modes dictionary to run the corresponding function.
+    MODE = 'model_dev_eval'  # select key from operation_modes dictionary to run the corresponding function.
 
     ###############################################################################################################
 
@@ -254,9 +255,13 @@ def main():
         analysis_attributes['plot_save_folder'] = Path("plots")  # folder to save the plots
         extract_price_patterns(analysis_attributes, target_patterns)
 
-    elif MODE == 'train_model':
+    elif MODE == 'model_dev_eval':
         # Step 4 - Ready to use the features dataset to train and test one or more machine learning models.
-        print(f"Model training and testing features not implemented yet....")
+        print(f"Model training and testing in progress....")
+        analysis_attributes['reportout_filepath'] = Path("ml_mde_report.pdf")  # pdf file name for writing the results of the analysis.
+        analysis_attributes['pdf_report_title'] = "ML MODEL DEVELOPMENT AND EVALUATION REPORT"  # Title of insights analysis report
+        analysis_attributes['plot_save_folder'] = Path("ml_model_dev_eval_plots")  # folder (as Path object) to save the plots
+        mde.run_model_dev_eval(analysis_attributes)
     else:
         print(f"Invalid mode: {MODE}. Please select a valid mode from the following: {operation_modes.keys()}")
 
