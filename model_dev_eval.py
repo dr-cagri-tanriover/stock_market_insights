@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import IsolationForest
+
 
 import data_insights as di
 import utils.plot_sessions as ps
@@ -45,8 +47,8 @@ def run_model_dev_eval(analysis_attributes: dict):
     anomaly_df = dsObj.df[dsObj.df['gt'].isin(anomaly_classes)]
 
     # We encode Normal with 1 and Anomaly with 0 for 'gt' next
-    normal_df.loc[:, 'gt'] = 1
-    anomaly_df.loc[:, 'gt'] = 0
+    normal_df.loc[:, 'gt'] = 1  # Inliers
+    anomaly_df.loc[:, 'gt'] = 0  # Outliers
 
     # We need to create the train and test splits next. Because we are dealing with time-series data, we cannot perform the split randomly.
     # to avoid temporal leakage. Therefore, we will use a time-based split.
@@ -89,6 +91,7 @@ def run_model_dev_eval(analysis_attributes: dict):
 
     test_X = test_df.drop(columns=column_defs['meta'] + [column_defs['target']])  # combined and ordered numerics-onlyfeature matrix for testing
     test_y = test_df[column_defs['target']]  # combined and ordered target vector for testing
+    test_X_meta_data = test_df[column_defs['meta'] + [column_defs['target']]].copy()  # copy metadata of test for evaluation later on
 
     print(f"Train set: {len(train_X)} samples")
     print(f"Test normal set: {len(test_X)} samples")
@@ -100,35 +103,56 @@ def run_model_dev_eval(analysis_attributes: dict):
     train_X_scaled = scaler.transform(train_X)  # perform scaling on train_X
     test_X_scaled = scaler.transform(test_X)  # perform scaling on test_X
 
-    # Visualize the train_X_scaled data next.
+    """
+    # Visualize the train_X_scaled data next. (for verification and documentation)
     plot_attributes = {'save_folder': analysis_attributes['plot_save_folder'], 'filename': 'train_X_scaled.png', 'x_label': 'time_step (day)'
     , 'y_label':'scaled magnitude', 'title': 'Features After Scaling'}
-
-    traces = [
-        {'x': list(range(0, len(train_X))), 'y': train_X_scaled[:, train_X.columns.get_loc('slope')], 'label': 'slope', 'color': 'b'},
-        {'x': list(range(0, len(train_X))), 'y': train_X_scaled[:, train_X.columns.get_loc('zcr')], 'label': 'zcr', 'color': 'r'},
-        {'x': list(range(0, len(train_X))), 'y': train_X_scaled[:, train_X.columns.get_loc('volatility')], 'label': 'volatility', 'color': 'g'},
-        {'x': list(range(0, len(train_X))), 'y': train_X_scaled[:, train_X.columns.get_loc('trend_strength')], 'label': 'trend_strength', 'color': 'm'}
-    ]
-
-    plot_session = ps.scatterPlot2D(plot_attributes)
-    plot_session.plot(traces=traces)
-
-   # Visualize the test_X_scaled data next.
-    plot_attributes = {'save_folder': analysis_attributes['plot_save_folder'], 'filename': 'test_X_scaled.png', 'x_label': 'time_step (day)'
-    , 'y_label':'scaled magnitude', 'title': 'Features After Scaling'}
-
-    traces = [
-        {'x': list(range(0, len(test_X))), 'y': test_X_scaled[:, test_X.columns.get_loc('slope')], 'label': 'slope', 'color': 'b'},
-        {'x': list(range(0, len(test_X))), 'y': test_X_scaled[:, test_X.columns.get_loc('zcr')], 'label': 'zcr', 'color': 'r'},
-        {'x': list(range(0, len(test_X))), 'y': test_X_scaled[:, test_X.columns.get_loc('volatility')], 'label': 'volatility', 'color': 'g'},
-        {'x': list(range(0, len(test_X))), 'y': test_X_scaled[:, test_X.columns.get_loc('trend_strength')], 'label': 'trend_strength', 'color': 'm'}
-    ]
-
-    plot_session = ps.scatterPlot2D(plot_attributes)
-    plot_session.plot(traces=traces)
+    plot_scaled_features(plot_attributes, train_X_scaled, train_X.columns)
+    plot_attributes['filename'] = 'test_X_scaled.png'
+    plot_scaled_features(plot_attributes, test_X_scaled, test_X.columns)
+    """
 
     # Next, we will build the Isolation Forest model.
+    isf_model = IsolationForest(n_estimators=200, contamination=0.02, max_features=1.0, random_state=random_seed)  # model initialization
+    isf_model.fit(train_X_scaled)  # training phase
+    test_X_scaled_scores = isf_model.decision_function(test_X_scaled)  # scoring phase
+
+    test_X_meta_data['isf_score'] = test_X_scaled_scores
+
+    # Visualize the normal vs anomaly histograms to see the effectiveness of the trained model on the test set.
+    normal_sample_scores = test_X_meta_data[test_X_meta_data['gt'] == 1]['isf_score']
+    anomaly_sample_scores = test_X_meta_data[test_X_meta_data['gt'] == 0]['isf_score']
+
+    plot_attributes = {'save_folder': analysis_attributes['plot_save_folder'], 'filename': 'normal_vs_anomaly_isf_scores.png', 'x_label': 'isf_score', 'y_label': 'count', 'title': 'Normal vs Anomaly ISF Scores Histogram'}
+    traces = [
+        {'data': normal_sample_scores, 'label': 'normal', 'color': 'b', 'bins': 30},
+        {'data': anomaly_sample_scores, 'label': 'anomaly', 'color': 'r', 'bins': 30}
+    ]
+
+    plot_session = ps.histPlot2D(plot_attributes)
+    plot_session.plot(traces=traces)
+    pass
+
+    # Checks to see if the model is failing globally or due to specific market conditions:
+    # 1 - Color code each label in normal samples and plot the histogram to see which label gets mixed with the anomaly samples the most.
+    #
+    # 2 - Calculate Mahalanobis distance between anomaly samples in the test setand the normal regime in the training set. Interpret as follows:
+    # a - HIGH DISTANCE & HIGH ANOMALY (i.e. very low negative score): The sample is an outlier and the Isolation Forest correctly flagged it.
+    # b - HIGH DISTANCE & LOW ANOMALY (i.e., high positive score): Sample is an outlier but the Isolation Forest failed to catch it. The shape of anomaly 
+    # is not something a forest can catch.
+    # c - LOW DISTANCE & HIGH ANOMALY (i.e., very low negative score): Counter-intuitive point. Sample is not an outlier but the Isolation Forest flagged it as
+    # strong anomaly. 
+    #
+    # 3 - Calculate Precision Recall for grouped results by ticker to see if any one stands out.
+    #
+    # 4 - Check if a particluar ticker is responsible for the Normal bars leaking into anomaly score zone (i.e., isf_score <= 0.10)
+    #
+    # 5 - Check to see if model fails during the 2022-2023 transition or the flat market periods in 2024 If 2024 Normal scores are significantly lower,
+    # that means the market has structurally shiftted, and our training data is no longer representative)
+    #
+    # 6 - Check for anomaly samples with high scores (i.e., isf_score > 0.10). Then check the trend_strength and volatility values
+    # to anomalies with low scores (i.e., isf_score <= 0.10).
+
 
     # Performance metric that matters the most is Precision. We want the model to identify the True Positives with high accuracy without missing
     # any rare occurence of anomalies !
@@ -143,3 +167,14 @@ def run_model_dev_eval(analysis_attributes: dict):
     # score on the test set!
 
 
+def plot_scaled_features(plot_attributes, X_scaled: np.ndarray, columns: list):
+    
+    traces = [
+        {'x': list(range(0, len(X_scaled))), 'y': X_scaled[:, columns.get_loc('slope')], 'label': 'slope', 'color': 'b', 'trace_type': 'scatter'},
+        {'x': list(range(0, len(X_scaled))), 'y': X_scaled[:, columns.get_loc('zcr')], 'label': 'zcr', 'color': 'r', 'trace_type': 'scatter'},
+        {'x': list(range(0, len(X_scaled))), 'y': X_scaled[:, columns.get_loc('volatility')], 'label': 'volatility', 'color': 'g', 'trace_type': 'scatter'},
+        {'x': list(range(0, len(X_scaled))), 'y': X_scaled[:, columns.get_loc('trend_strength')], 'label': 'trend_strength', 'color': 'm', 'trace_type': 'scatter'}
+    ]
+
+    plot_session = ps.scatterPlot2D(plot_attributes)
+    plot_session.plot(traces=traces)
