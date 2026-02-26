@@ -37,8 +37,8 @@ def run_model_dev_eval(analysis_attributes: dict):
 
     # Following are the column names and their categories in this dataset
     column_defs = {'features': ['slope', 'zcr', 'trend_strength', 'volatility'],  # features to train on
-                    'target': 'gt',  # aka ground truth
-                    'meta': ['end_date', 'ticker']
+                    'target': 'gt_flag',  # aka encoded ground truth
+                    'meta': ['end_date', 'ticker', 'gt']  # 'gt' keeps the original string labels of the data
                 }
 
     normal_classes = ['OSCILLATING', 'OTHER', 'STATIONARY']
@@ -47,8 +47,8 @@ def run_model_dev_eval(analysis_attributes: dict):
     anomaly_df = dsObj.df[dsObj.df['gt'].isin(anomaly_classes)]
 
     # We encode Normal with 1 and Anomaly with 0 for 'gt' next
-    normal_df.loc[:, 'gt'] = 1  # Inliers
-    anomaly_df.loc[:, 'gt'] = 0  # Outliers
+    normal_df.loc[:, 'gt_flag'] = 1  # Inliers code = 1
+    anomaly_df.loc[:, 'gt_flag'] = 0  # Outliers code = 0
 
     # We need to create the train and test splits next. Because we are dealing with time-series data, we cannot perform the split randomly.
     # to avoid temporal leakage. Therefore, we will use a time-based split.
@@ -73,8 +73,8 @@ def run_model_dev_eval(analysis_attributes: dict):
     random_seed = 1974  # for repeatability of the results
     train_normal_df = train_normal_df.sample(frac=1, random_state=random_seed)  # keeps 100% of all rows and shuffles them
 
-    train_X = train_normal_df.drop(columns=column_defs['meta'] + [column_defs['target']])  # numeric only feature matrix for training
-    train_y = train_normal_df[column_defs['target']]  # target vector for training
+    train_X = train_normal_df.drop(columns=column_defs['meta'] + [column_defs['target']])  # leave numeric only feature matrix for training
+    #train_y = train_normal_df[column_defs['target']]  # target vector for training
 
     # We will NOT shuffle the test set. However, we need to ensure the the normal and anomaly test sets are chronologically ordered.
     # This will allow us to evaluate how the performance of the model changes over time.
@@ -90,7 +90,7 @@ def run_model_dev_eval(analysis_attributes: dict):
     test_df = test_df.sort_values(by='end_date', ascending=True)  # sort the dataframe by 'end_date' in ascending order
 
     test_X = test_df.drop(columns=column_defs['meta'] + [column_defs['target']])  # combined and ordered numerics-onlyfeature matrix for testing
-    test_y = test_df[column_defs['target']]  # combined and ordered target vector for testing
+    #test_y = test_df[column_defs['target']]  # combined and ordered target vector for testing
     test_X_meta_data = test_df[column_defs['meta'] + [column_defs['target']]].copy()  # copy metadata of test for evaluation later on
 
     print(f"Train set: {len(train_X)} samples")
@@ -120,8 +120,8 @@ def run_model_dev_eval(analysis_attributes: dict):
     test_X_meta_data['isf_score'] = test_X_scaled_scores
 
     # Visualize the normal vs anomaly histograms to see the effectiveness of the trained model on the test set.
-    normal_sample_scores = test_X_meta_data[test_X_meta_data['gt'] == 1]['isf_score']
-    anomaly_sample_scores = test_X_meta_data[test_X_meta_data['gt'] == 0]['isf_score']
+    normal_sample_scores = test_X_meta_data[test_X_meta_data['gt_flag'] == 1]['isf_score']
+    anomaly_sample_scores = test_X_meta_data[test_X_meta_data['gt_flag'] == 0]['isf_score']
 
     plot_attributes = {'save_folder': analysis_attributes['plot_save_folder'], 'filename': 'normal_vs_anomaly_isf_scores.png', 'x_label': 'isf_score', 'y_label': 'count', 'title': 'Normal vs Anomaly ISF Scores Histogram'}
     traces = [
@@ -131,11 +131,28 @@ def run_model_dev_eval(analysis_attributes: dict):
 
     plot_session = ps.histPlot2D(plot_attributes)
     plot_session.plot(traces=traces)
-    pass
 
     # Checks to see if the model is failing globally or due to specific market conditions:
     # 1 - Color code each label in normal samples and plot the histogram to see which label gets mixed with the anomaly samples the most.
-    #
+
+    normal_OSCILLATING_scores = test_X_meta_data[test_X_meta_data['gt'] == 'OSCILLATING']['isf_score']
+    normal_OTHER_scores = test_X_meta_data[test_X_meta_data['gt'] == 'OTHER']['isf_score']
+    normal_STATIONARY_scores = test_X_meta_data[test_X_meta_data['gt'] == 'STATIONARY']['isf_score']
+    anomaly_TREND_UP_scores = test_X_meta_data[test_X_meta_data['gt'] == 'TREND_UP']['isf_score']
+    anomaly_TREND_DOWN_scores = test_X_meta_data[test_X_meta_data['gt'] == 'TREND_DOWN']['isf_score']
+
+    plot_attributes = {'save_folder': analysis_attributes['plot_save_folder'], 'filename': 'normal_vs_anomaly_CLASSIFIED.png', 'x_label': 'isf_score', 'y_label': 'count', 'title': 'Normal vs Anomaly Classified Histogram'}
+    traces = [
+        {'data': normal_OSCILLATING_scores, 'label': 'normal OSCILLATING', 'color': 'b', 'bins': 30, 'alpha': 0.4},
+        {'data': normal_OTHER_scores, 'label': 'normal OTHER', 'color': 'g', 'bins': 30, 'alpha': 0.3},
+        {'data': anomaly_TREND_UP_scores, 'label': 'anomaly TREND_UP', 'color': 'r', 'bins': 30, 'alpha': 0.2, 'edgecolor':'black'},
+        {'data': anomaly_TREND_DOWN_scores, 'label': 'anomaly TREND_DOWN', 'color': 'black', 'bins': 30, 'alpha': 0.5},
+        {'data': normal_STATIONARY_scores, 'label': 'normal STATIONARY', 'color': 'yellow', 'bins': 30, 'alpha': 1}
+    ]
+
+    plot_session = ps.histPlot2D(plot_attributes)
+    plot_session.plot(traces=traces)
+
     # 2 - Calculate Mahalanobis distance between anomaly samples in the test setand the normal regime in the training set. Interpret as follows:
     # a - HIGH DISTANCE & HIGH ANOMALY (i.e. very low negative score): The sample is an outlier and the Isolation Forest correctly flagged it.
     # b - HIGH DISTANCE & LOW ANOMALY (i.e., high positive score): Sample is an outlier but the Isolation Forest failed to catch it. The shape of anomaly 

@@ -1,5 +1,6 @@
 from pathlib import Path
 import matplotlib.pyplot as plt
+import numpy as np
 
 """
 Refer to get_default_attribs_dict() method in each plot class to see the default attributes used for each plot type.
@@ -141,6 +142,10 @@ class histPlot2D(BasePlotSessions):
         default_attribs = self.get_default_attribs_dict()
         attributes = {**default_attribs, **attributes}
 
+        self.xmin = np.inf  # positive infinity
+        self.ymin = 0
+        self.xmax , self.ymax = -np.inf, -np.inf  # negative infinity   
+
         super().__init__(attributes)
         self.attr['x_label'] = attributes['x_label']
         self.attr['y_label'] = attributes['y_label']
@@ -175,6 +180,19 @@ class histPlot2D(BasePlotSessions):
     def update_current_attributes_dict(self, new_attributes: dict):
         self.attr = {**self.attr, **new_attributes}
 
+    def update_axis_limits(self, data):
+        counts, bin_edges = np.histogram(data, bins=self.attr['bins'], density=self.attr['density'])
+        # self.ymin = 0  ALWAYS TRUE
+        _ymax = counts.max()
+        if _ymax > self.ymax:
+            self.ymax = _ymax  # For multiple trace plots, this update is important.
+        _xmin = bin_edges[0]
+        if _xmin < self.xmin:
+            self.xmin = _xmin   # For multiple trace plots, this update is important.
+        _xmax = bin_edges[-1]
+        if _xmax > self.xmax:
+            self.xmax = _xmax   # For multiple trace plots, this update is important.
+
     def plot(self, data=None, traces=None, label=None, **kwargs):
         """
         Plot one or more histograms on the same axes.
@@ -194,6 +212,9 @@ class histPlot2D(BasePlotSessions):
         if traces is not None:
             for tr in traces:
                 d = tr['data']
+                if len(d) > 0:
+                    # There may be empty data in the trace !
+                    self.update_axis_limits(d)
                 color = tr.get('color', self.attr['color'])
                 bins = tr.get('bins', self.attr['bins'])
                 alpha = tr.get('alpha', self.attr['alpha'])
@@ -206,11 +227,14 @@ class histPlot2D(BasePlotSessions):
         else:
             if data is None:
                 raise ValueError("Either data= or traces= must be provided.")
+            self.update_axis_limits(data)
             plt.hist(data, bins=self.attr['bins'], alpha=self.attr['alpha'],
                     density=self.attr['density'], color=self.attr['color'],
                     edgecolor=self.attr['edgecolor'], histtype=self.attr['histtype'],
                     label=label, **kwargs)
 
+        plt.xlim(self.xmin, self.xmax)  # using the most up to date xmin, xmax according to the trace data
+        plt.ylim(self.ymin, self.ymax)  # using the most up to date ymin, ymax according to the trace data
         plt.xlabel(self.attr['x_label'])
         plt.ylabel(self.attr['y_label'])
         plt.title(self.attr['title'])
