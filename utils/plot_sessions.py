@@ -10,14 +10,14 @@ class BasePlotSessions:
     """
     Base class for plot sessions.
     """
-    def __init__(self, attributes: dict):
+    def __init__(self, attributes: dict, reference_lines: list = None):
         self.attr = {}
         self.attr['save_folder'] = attributes['save_folder']  # Folder to save the plots (can be None to skip saving)
         self.attr['display_plots'] = attributes['display_plots']  # Bool: True to display plots, False not to display
         self.attr['gridOn'] = attributes['gridOn']  # Bool: True to show grid, False not to show
         self.attr['legendOn'] = attributes['legendOn']  # Bool: True to show legend, False not to show
         self.attr['figsize'] = attributes['figsize']  # Figure size for the plot
-
+        self.reference_lines = reference_lines  # Horizontal or vertical lines to overlay on the plot if needed.
 
     def clean_up(self):
         # Close all matplotlib figures to free up memory
@@ -37,11 +37,14 @@ class scatterPlot2D(BasePlotSessions):
     """
     Handles a simple 2D scatter plot.
     """
-    def __init__(self, attributes: dict):
+    def __init__(self, attributes: dict, reference_lines: list = None):
         default_attribs = self.get_default_attribs_dict()
         attributes = {**default_attribs, **attributes}  # New values override default values, if they exist. Otherwise, default values persist.
 
-        super().__init__(attributes)
+        self.xmin, self.ymin  = np.inf, np.inf  # positive infinity
+        self.xmax , self.ymax = -np.inf, -np.inf  # negative infinity   
+
+        super().__init__(attributes, reference_lines)
         self.attr['x_label'] = attributes['x_label']
         self.attr['y_label'] = attributes['y_label']
         self.attr['title'] = attributes['title']
@@ -71,6 +74,22 @@ class scatterPlot2D(BasePlotSessions):
         'linewidth': 0.15    # applies to line plots only. Any positive float value is valid. 0 i also valid but no line is drawn! 
         }
 
+    def update_axis_limits(self, x, y):
+        # self.ymin = 0  ALWAYS TRUE
+        _ymin = min(list(y))
+        if _ymin < self.ymin:
+            self.ymin = _ymin   # For multiple trace plots, this update is important.
+        _ymax = max(list(y))
+        if _ymax > self.ymax:
+            self.ymax = _ymax  # For multiple trace plots, this update is important.
+        _xmin = min(list(x))
+        if _xmin < self.xmin:
+            self.xmin = _xmin   # For multiple trace plots, this update is important.
+        _xmax = max(list(x))
+        if _xmax > self.xmax:
+            self.xmax = _xmax   # For multiple trace plots, this update is important.
+
+
     def update_current_attributes_dict(self, new_attributes: dict):
         self.attr = {**self.attr, **new_attributes}  # Only the keys in new_attributes override the keys in self.attr
 
@@ -95,6 +114,7 @@ class scatterPlot2D(BasePlotSessions):
             for tr in traces:
                 # tr is a dictionary.
                 x, y = tr['x'], tr['y']
+                self.update_axis_limits(x, y)
                 color = tr.get('color', self.attr['color'])
                 marker = tr.get('marker', self.attr['marker'])
                 size = tr.get('marker_size', self.attr['marker_size'])
@@ -111,6 +131,8 @@ class scatterPlot2D(BasePlotSessions):
             plt.scatter(x_data, y_data, color=self.attr['color'], marker=self.attr['marker'],
                         s=self.attr['marker_size'], label=label)
 
+        plt.xlim(self.xmin, self.xmax)  # using the most up to date xmin, xmax according to the trace data
+        plt.ylim(self.ymin, self.ymax)  # using the most up to date ymin, ymax according to the trace data
         plt.xlabel(self.attr['x_label'])
         plt.ylabel(self.attr['y_label'])
         plt.title(self.attr['title'])
@@ -138,7 +160,7 @@ class histPlot2D(BasePlotSessions):
     """
     Handles a simple 2D histogram plot (one or more distributions on the same axes).
     """
-    def __init__(self, attributes: dict):
+    def __init__(self, attributes: dict, reference_lines: list = None):
         default_attribs = self.get_default_attribs_dict()
         attributes = {**default_attribs, **attributes}
 
@@ -146,7 +168,7 @@ class histPlot2D(BasePlotSessions):
         self.ymin = 0
         self.xmax , self.ymax = -np.inf, -np.inf  # negative infinity   
 
-        super().__init__(attributes)
+        super().__init__(attributes, reference_lines)
         self.attr['x_label'] = attributes['x_label']
         self.attr['y_label'] = attributes['y_label']
         self.attr['title'] = attributes['title']
@@ -232,6 +254,16 @@ class histPlot2D(BasePlotSessions):
                     density=self.attr['density'], color=self.attr['color'],
                     edgecolor=self.attr['edgecolor'], histtype=self.attr['histtype'],
                     label=label, **kwargs)
+
+        if self.reference_lines is not None:
+            # There are horizontal/vertical lines to overlay on the plot.
+            for line in self.reference_lines:
+                if line['type'] == 'horizontal':
+                    # Vertical line at the x-axis value.
+                    plt.axvline(line['value'], color=line['color'], linewidth=line['linewidth'], linestyle=line['linestyle'], label=line['label'])
+                elif line['type'] == 'vertical':
+                    # Horizontal line at the y-axis value.
+                    plt.axhline(line['value'], color=line['color'], linewidth=line['linewidth'], linestyle=line['linestyle'], label=line['label'])
 
         plt.xlim(self.xmin, self.xmax)  # using the most up to date xmin, xmax according to the trace data
         plt.ylim(self.ymin, self.ymax)  # using the most up to date ymin, ymax according to the trace data
