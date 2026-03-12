@@ -12,5 +12,6 @@ dependencies = [
     "scikit-learn>=1.0.0",
     "rich>=13.0.0",
     "matplotlib>=3.7.0",
-    "reportlab>=4.4.5"
+    "reportlab>=4.4.5",
+    "skops >= 0.13.0"
     ]

@@ -162,7 +162,7 @@ class FeatureDatasetBuilder:
             sample_group: DataFrame containing the sample data for prices on multiple days
             
         Returns:
-            Dictionary containing the followingcomputed features:
+            Dictionary containing the following computed features:
             'slope': slope of the linear fit to the prices in the sample_group
             'zcr': zero crossing rate of the prices in the sample_group
             'volatility': volatility of the prices in the sample_group
@@ -279,7 +279,7 @@ def get_volatility_of_returns(sample_group: pd.DataFrame) -> float:
     return float(daily_volatility)
 
 def get_ground_truth_label(features: Dict) -> str:
-    f"""
+    """
     Compute the ground truth label for the given features.
     features.keys()=['slope', 'zcr', 'volatility', 'trend_strength']
     

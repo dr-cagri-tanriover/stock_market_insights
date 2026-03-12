@@ -3,6 +3,9 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import joblib
+import skops.io as sio  # safer alternative to pickle/joblib for Hugging Face in particular.
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 from sklearn.model_selection import GridSearchCV, PredefinedSplit
@@ -127,7 +130,7 @@ def isolation_forest_optimized_model(analysis_attributes: dict, dsObj: di.DataIn
     validation_y = validation_df[column_defs['target']]  # combined and ordered target vector for validation
     #validation_X_meta_data = validation_df[column_defs['meta'] + [column_defs['target']]].copy()  # copy metadata of validation for evaluation later on
 
-    print(f"TRAIN set: total samples{len(train_X)}, anomaly samples: NONE")
+    print(f"TRAIN set: total samples: {len(train_X)}, anomaly samples: NONE")
     print(f"VALIDATION: total samples: {len(validation_X)}, anomaly samples: {len(anomaly_df_in_validation_years)}")
     print(f"TEST: total samples: {len(test_X)}, anomaly samples: {len(anomaly_df_in_test_years)}")
 
@@ -163,7 +166,7 @@ def isolation_forest_optimized_model(analysis_attributes: dict, dsObj: di.DataIn
         'max_features': [0.5, 0.7, 0.8], # keep this fixed for now!
         'random_state': [random_seed], # for repeatability of the results
         'n_estimators': [100, 200, 500], # number of trees to build in the forest
-        'max_samples': [512, 1024, 2048], # number of samples to use at random for building each tree in the model
+        'max_samples': [256,512, 1024, 2048], # number of samples to use at random for building each tree in the model
     }
 
     grid_search = GridSearchCV(
@@ -224,12 +227,45 @@ def isolation_forest_optimized_model(analysis_attributes: dict, dsObj: di.DataIn
     test_X_scaled_scores = final_model.decision_function(test_X_scaled)
     test_X_meta_data['isf_score'] = test_X_scaled_scores
 
+    # Create and save a pipeline object for using for inference later.
+    pipeline = Pipeline([('scaler', scaler), ('model', final_model)])
+    pipeline_path = Path(analysis_attributes['plot_save_folder']) / 'optimized_isf_pipeline.pkl'
+    pipeline_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(pipeline_path, 'wb') as f:
+        joblib.dump(pipeline, f)
+    # Also, dump the pipeline as a *.skops file for Hugging Face compatibility.
+    skops_path = Path(analysis_attributes['plot_save_folder']) / 'optimized_isf_pipeline.skops'
+    skops_path.parent.mkdir(parents=True, exist_ok=True)
+    sio.dump(pipeline, skops_path)
+
     # Visualize the normal vs anomaly histograms to see the effectiveness of the trained model on the test set.
     normal_OSCILLATING_scores = test_X_meta_data[test_X_meta_data['gt'] == 'OSCILLATING']['isf_score']
     normal_OTHER_scores = test_X_meta_data[test_X_meta_data['gt'] == 'OTHER']['isf_score']
     normal_STATIONARY_scores = test_X_meta_data[test_X_meta_data['gt'] == 'STATIONARY']['isf_score']
     anomaly_TREND_UP_scores = test_X_meta_data[test_X_meta_data['gt'] == 'TREND_UP']['isf_score']
     anomaly_TREND_DOWN_scores = test_X_meta_data[test_X_meta_data['gt'] == 'TREND_DOWN']['isf_score']
+
+    """ Following is for GRADIO dashboard visualization.
+    # Store the 5 score series as columns in a CSV (shorter series padded with blank/NaN).
+    score_series = [
+        ('normal_OSCILLATING', normal_OSCILLATING_scores),
+        ('normal_OTHER', normal_OTHER_scores),
+        ('normal_STATIONARY', normal_STATIONARY_scores),
+        ('anomaly_TREND_UP', anomaly_TREND_UP_scores),
+        ('anomaly_TREND_DOWN', anomaly_TREND_DOWN_scores),
+    ]
+    max_len = max(len(s) for _, s in score_series)
+    scores_for_csv = {}
+    for name, s in score_series:
+        arr = np.asarray(s, dtype=float)
+        if len(arr) < max_len:
+            arr = np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan)
+        scores_for_csv[name] = arr
+    scores_df = pd.DataFrame(scores_for_csv)
+    scores_csv_path = Path(analysis_attributes['plot_save_folder']) / 'normal_vs_anomaly_isf_scores.csv'
+    scores_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    scores_df.to_csv(scores_csv_path, index=False)
+    """
 
     plot_attributes = {'save_folder': analysis_attributes['plot_save_folder'], 'filename': 'normal_vs_anomaly_CLASSIFIED_best_estimator.png', 'x_label': 'isf_score', 'y_label': 'count', 'title': 'Normal vs Anomaly Classified Histogram'}
     traces = [
